@@ -34,10 +34,12 @@ The HybridDegradLSTM margin over the strong LSTM baseline is not statistically s
 data/       Dataset loaders and crawling utilities; raw UPFD data is not tracked
 features/   Drift and representation feature construction
 models/     GNN, LSTM, hybrid, and drift-pooling models
+pipeline/   Shared model registry, validation, checkpoints, and truncation utilities
 scripts/    Analysis, evaluation, ablation, and figure-generation scripts
 figures/    Figures used in the paper draft
 results/    Selected verified JSON result artifacts
 paper/      Markdown and LaTeX paper drafts, plus compiled PDF
+tests/      Unit tests for the canonical pipeline
 ```
 
 ## Setup
@@ -57,6 +59,21 @@ The experiments use the UPFD GossipCop and PolitiFact datasets with precomputed 
 Run commands from the repository root after installing the dataset:
 
 ```bash
+# Validate the local UPFD data before training
+python3 scripts/validate_data.py
+
+# Train the canonical HybridDegradLSTM pipeline
+python3 train.py --config configs/default.yaml --model hybrid --seed 1
+
+# Evaluate a structured checkpoint
+python3 evaluate.py \
+  --config configs/default.yaml \
+  --checkpoint checkpoints/hybrid_gossipcop_seed1.pt \
+  --skip-baselines
+
+# Run the automated checks
+python3 -m pytest -q
+
 # Drift-only discrimination on full and truncated cascades
 python scripts/run_discriminator_robustness.py
 
@@ -68,6 +85,8 @@ python multiseed.py --subset gossipcop --seeds 1,2,3 --out results/gossipcop_rep
 ```
 
 Most training runs are compute-intensive. Apple Silicon uses MPS when available; otherwise the scripts fall back to CPU.
+
+The canonical training path writes a metadata-rich checkpoint containing the model architecture, input dimension, dataset, seed, validation score, and full experiment configuration. The existing research runners remain available for reproducing historical comparison tables.
 
 ## Paper
 

@@ -1,9 +1,11 @@
+import argparse
+import json
 import os
 import sys
-import argparse
-import yaml
-import torch
+
 import numpy as np
+import torch
+import yaml
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     roc_auc_score, average_precision_score
@@ -12,9 +14,9 @@ from sklearn.metrics import (
 sys.path.insert(0, os.path.dirname(__file__))
 
 from data.upfd.loader import UPFDGraphDataset, get_upfd_loaders
-from models.baseline_lstm import BaselineLSTM
-from models.degradation_gnn import DegradationGNN
 from models.early_detector import EarlyDetector
+from pipeline.checkpoints import load_checkpoint
+from pipeline.models import uses_drift_auxiliary_loss
 
 
 METRICS = {
@@ -95,15 +97,33 @@ def evaluate_baselines(train_loader, test_loader):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="configs/default.yaml")
-    parser.add_argument("--model", type=str, default="baseline_lstm")
+    parser.add_argument("--model", type=str, default=None,
+                        help="Required only for legacy state-dict checkpoints")
     parser.add_argument("--checkpoint", type=str, required=True)
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--device", type=str, default=None)
+    parser.add_argument("--output", type=str, default=None)
+    parser.add_argument("--skip-baselines", action="store_true")
     args = parser.parse_args()
 
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
 
-    device = torch.device(args.device)
+    if args.device:
+        device = torch.device(args.device)
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+
+    model, checkpoint = load_checkpoint(
+        args.checkpoint,
+        device,
+        model_name=args.model,
+        model_config=config.get("model"),
+    )
+    model_name = checkpoint.get("model_name", args.model)
 
     train_loader, _, test_loader = get_upfd_loaders(
         root=config["data"]["root"],
@@ -111,29 +131,6 @@ def main():
         feature_type=config["data"]["feature_type"],
         batch_size=config["data"]["batch_size"],
     )
-
-    sample = next(iter(test_loader)).to(device)
-    input_dim = sample.x.shape[1]
-    is_gnn = args.model == "degradation_gnn"
-
-    if args.model == "baseline_lstm":
-        model = BaselineLSTM(
-            input_dim=input_dim,
-            hidden_dim=config["model"].get("hidden_dim", 128),
-            num_layers=config["model"].get("num_layers", 2),
-            dropout=config["model"].get("dropout", 0.3),
-            bidirectional=config["model"].get("bidirectional", True),
-        ).to(device)
-    elif is_gnn:
-        model = DegradationGNN(
-            input_dim=input_dim,
-            hidden_dim=config["model"].get("hidden_dim", 128),
-            num_layers=config["model"].get("num_layers", 2),
-            dropout=config["model"].get("dropout", 0.3),
-        ).to(device)
-
-    model.load_state_dict(torch.load(args.checkpoint, map_location=device))
-    model.eval()
 
     # Full cascade evaluation
     all_preds, all_probs, all_labels = [], [], []
@@ -143,7 +140,7 @@ def main():
         with torch.no_grad():
             logits_list = []
             for data in batch.to_data_list():
-                if is_gnn:
+                if uses_drift_auxiliary_loss(model_name):
                     logits, _ = model(data, return_drift=True)
                 else:
                     logits = model(data)
@@ -184,7 +181,32 @@ def main():
     for frac, m in results.items():
         print(f"  Truncation {frac:.0%}: F1={m['f1']:.4f} Acc={m['accuracy']:.4f}")
 
-    evaluate_baselines(train_loader, test_loader)
+    if not args.skip_baselines:
+        evaluate_baselines(train_loader, test_loader)
+
+    output = {
+        "model": model_name,
+        "checkpoint": args.checkpoint,
+        "dataset": config["data"]["subset"],
+        "device": str(device),
+        "checkpoint_metadata": {
+            key: value for key, value in checkpoint.items()
+            if key not in {"state_dict", "experiment_config"}
+        },
+        "full_cascade": {**metrics, "ece": ece},
+        "early_detection": {
+            str(frac): {key: float(value) for key, value in values.items()}
+            for frac, values in results.items()
+        },
+    }
+    output_path = args.output or os.path.join(
+        config.get("logging", {}).get("result_dir", "results"),
+        f"evaluation_{model_name}_{config['data']['subset']}.json",
+    )
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    with open(output_path, "w") as handle:
+        json.dump(output, handle, indent=2)
+    print(f"Saved evaluation: {output_path}")
 
 
 def evaluate_drift(model, test_loader, device):

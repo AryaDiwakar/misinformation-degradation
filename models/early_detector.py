@@ -4,6 +4,8 @@ import numpy as np
 from typing import Dict, List
 from torch_geometric.data import Data
 
+from pipeline.truncation import truncate_cascade
+
 
 class EarlyDetector:
     """
@@ -62,21 +64,4 @@ class EarlyDetector:
         return results
 
     def _truncate_cascade(self, graph: Data, fraction: float) -> Data:
-        order = graph.hop_depth.argsort()
-        n = graph.x.size(0)
-        keep = max(1, int(n * fraction))
-        keep_nodes = order[:keep]
-        node_map = {old.item(): i for i, old in enumerate(keep_nodes)}
-        mask = torch.zeros(n, dtype=torch.bool)
-        mask[keep_nodes] = True
-        edge_mask = mask[graph.edge_index[0]] & mask[graph.edge_index[1]]
-        new_edge_index = graph.edge_index[:, edge_mask].clone()
-        for i in range(new_edge_index.size(1)):
-            new_edge_index[0, i] = node_map[new_edge_index[0, i].item()]
-            new_edge_index[1, i] = node_map[new_edge_index[1, i].item()]
-        return Data(
-            x=graph.x[keep_nodes],
-            edge_index=new_edge_index,
-            y=graph.y,
-            hop_depth=graph.hop_depth[keep_nodes],
-        )
+        return truncate_cascade(graph, fraction)

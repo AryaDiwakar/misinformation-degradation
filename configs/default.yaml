@@ -2,10 +2,10 @@ data:
   root: "./data/upfd/raw"
   subset: "gossipcop"
   feature_type: "bert"
-  batch_size: 32
+  batch_size: 64
 
 model:
-  name: "baseline_lstm"
+  name: "hybrid"
   input_dim: 768
   hidden_dim: 128
   num_layers: 2
@@ -13,7 +13,7 @@ model:
   bidirectional: true
 
 training:
-  epochs: 100
+  epochs: 20
   lr: 0.001
   weight_decay: 1e-5
   early_stop_patience: 10
@@ -22,3 +22,4 @@ training:
 logging:
   log_dir: "./logs"
   checkpoint_dir: "./checkpoints"
+  result_dir: "./results"

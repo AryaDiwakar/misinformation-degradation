@@ -5,9 +5,9 @@ from torch.utils.data import DataLoader
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
 
-from data.upfd.loader import UPFDGraphDataset, collate_fn
+from data.upfd.loader import UPFDGraphDataset, build_parent_index, collate_fn
 from models.baseline_lstm import BaselineLSTM
-from models.degradation_gnn import DegradationGNN, _build_parent_index
+from models.degradation_gnn import DegradationGNN
 from models.baselines import GCNModel, GATModel, BiGCNModel
 from models.early_detector import EarlyDetector
 from features.drift import compute_drift
@@ -69,7 +69,7 @@ def run(model, name, subset, epochs, is_gnn=False, dw=0.0):
                 if is_gnn:
                     logits, dp = model(data, return_drift=True)
                     llist.append(logits)
-                    parent = _build_parent_index(data.edge_index, data.x.size(0))
+                    parent = build_parent_index(data.edge_index, data.x.size(0)).to(DEVICE)
                     nc = torch.zeros(data.x.size(0), dtype=torch.long, device=DEVICE)
                     for u, v in zip(*data.edge_index[:, data.edge_index[0] != data.edge_index[1]]):
                         nc[u] += 1
