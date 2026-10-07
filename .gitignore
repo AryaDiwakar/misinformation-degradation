@@ -1,0 +1,41 @@
+# Operating system files
+.DS_Store
+
+# Python environments and caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Notebook and IDE state
+.ipynb_checkpoints/
+.idea/
+.vscode/
+
+# Local training state and logs
+checkpoints/
+logs/
+
+# Local datasets and model/data binaries
+data/upfd/raw/
+*.npy
+*.npz
+*.pkl
+*.pt
+*.pth
+*.zip
+*.part
+
+# Generated result files. Keep the verified artifacts used by the paper.
+results/*
+!results/significance.json
+!results/drift_discriminator_robustness.json
+!results/early_detection_multiseed.json
+!results/ablations_10pct.json
+
+# Presentation and document exports are kept out of the source repository.
+*.pptx
+*.docx

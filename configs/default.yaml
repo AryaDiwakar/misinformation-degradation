@@ -1,0 +1,24 @@
+data:
+  root: "./data/upfd/raw"
+  subset: "gossipcop"
+  feature_type: "bert"
+  batch_size: 32
+
+model:
+  name: "baseline_lstm"
+  input_dim: 768
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.3
+  bidirectional: true
+
+training:
+  epochs: 100
+  lr: 0.001
+  weight_decay: 1e-5
+  early_stop_patience: 10
+  drift_weight: 0.5
+
+logging:
+  log_dir: "./logs"
+  checkpoint_dir: "./checkpoints"

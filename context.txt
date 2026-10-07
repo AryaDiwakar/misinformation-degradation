@@ -1,0 +1,67 @@
+## Project Status: MISINFORMATION DEGRADATION — CONFERENCE PAPER PREP
+
+### PAPER IS DRAFTED: `paper/report.md` (abstract, method, all tables/figures embedded, references, appendix)
+
+### HEADLINE RESULTS (multi-seed, 3 seeds each)
+
+#### GossipCop (primary dataset, 1092 train / 3826 test)
+| Model | Acc (mean±std) | AUC-ROC |
+|-------|:---:|:---:|
+| GCN | 0.7823±0.0032 | 0.8686 |
+| GAT | 0.9094±0.0086 | 0.9646 |
+| BiGCN | 0.9390±0.0011 | 0.9798 |
+| DegradGNN | 0.9300±0.0037 | 0.9780 |
+| BaselineLSTM | 0.9561±0.0028 | 0.9858 |
+| **Hybrid** | **0.9585±0.0030** | **0.9876** |
+
+Significance (n=3): Hybrid vs LSTM p=0.224 acc / p=0.452 AUC (NOT significant). Hybrid vs DegradGNN p=0.020, d=3.98 (significant).
+
+#### Politifact (unstable — 62 train, models often collapse to 48.9%)
+GCN 83.11±0.56 | GAT 78.43±5.87 | BiGCN 79.19±1.28 | LSTM 73.30±17.28 | DegradGNN 48.87±0.00 | Hybrid 72.25±16.54
+Report with heavy caveat; paper uses PolitiFact ONLY for the drift phenomenon.
+
+### THE NOVEL FINDING (robust, cross-dataset) — computed on test NODES
+Fake news drifts LESS than real news (2-dim drift = cosine + L2, root masked):
+- GossipCop: real 7.18 vs fake 6.39, ratio 0.890, t=-66.4, p<1e-16 (144,726 vs 75,263 nodes)
+- Politifact: real 6.05 vs fake 5.35, ratio 0.885, t=-17.7, p=6e-70 (13,113 vs 18,091 nodes)
+- Effect emerges at hop>=2; root drift zero by construction (not ~1.40 — that was old 5-dim def).
+
+### Drift-only discriminator (RF, 12 features, 5-fold, reproducible)
+- GossipCop full: acc 0.795 / AUC 0.873; at 10% truncation: acc 0.735 / AUC 0.787
+- Politifact: weak (0.525 acc / 0.545 AUC)
+Note: earlier single-run files claimed 0.816/0.892 — those were a different/lost split; use the 5-fold numbers.
+
+### CRITICAL DISCOVERY — old early-detection numbers NOT reproducible
+- Old early_detection.json / multiseed_10pct.json claimed LSTM@10% = 91.35%, DegradGNN@10% = 90.98%, Hybrid@10% = 92.24%. The generating script is LOST and these DO NOT reproduce.
+- Clean, verifiable protocol (EarlyDetector, train-on-full, truncate-test, 3 seeds) gives:
+  | Model | 10% | 25% | 50% | 100% |
+  | LSTM | 0.787±0.010 | 0.914±0.016 | 0.947±0.007 | 0.954±0.003 |
+  | DegradGNN | 0.814±0.025 | 0.912±0.009 | 0.934±0.002 | 0.930±0.004 |
+  | Hybrid | 0.808±0.017 | 0.914±0.020 | 0.942±0.010 | 0.953±0.005 |
+- GNN models modestly more robust at 10% (+2.5pt vs LSTM) but not significant. All models degrade hard at 10%.
+
+### ABLATION (consistent at 100% AND 10%): drift/hop features HURT
+- 100% (prior): Full 91.27 < w/o drift 92.45 < w/o drift+hop 93.34 < w/o tree (MLP) 95.40
+- 10% re-run (seed 1): Full 92.47/74.80 | w/o drift 93.65/85.21 | w/o hop 93.54/82.20 (100%/10%)
+- Per-node drift hurts the classifier at every cascade size; AGGREGATE drift is discriminative (0.873 AUC). Paper frames this as a design-relevant negative result.
+
+### PAPER NARRATIVE (honest framing, in paper/report.md)
+1. Drift phenomenon (fake drifts ~11% less; p<1e-70; cross-dataset) — the strongest claim.
+2. Drift-only discriminator (0.873 AUC) — signal usable without text/graphs; survives 10% truncation (0.787 AUC).
+3. HybridDegradLSTM — best in comparison (95.85%) but margin over LSTM not significant (honest).
+4. Partial-cascade analysis — honest robustness gap; per-node drift features don't help; aggregate drift does.
+
+### FILES
+- paper/report.md — full paper draft (tables, figures, references, appendix)
+- figures/ — 7 figures: drift_analysis, main_results, ablation, discriminator, architecture, example_tree, early_detection
+- results/significance.json — paired t-tests, Cohen d, drift ratios
+- results/drift_discriminator_robustness.json — RF full vs 10%, 5-fold
+- results/early_detection_multiseed.json — clean 3-seed truncation curves
+- results/ablations_10pct.json — ablation at 10% truncation (seed 1)
+- scripts/: make_figures.py, analysis_stats.py, run_early_detection.py, run_ablation_10pct.py, run_discriminator_robustness.py, compare_gnn.py, validate_10pct.py
+- DO NOT trust: results/early_detection.json, results/multiseed_10pct.json, results/mcnemar.json (lost/buggy protocol)
+
+### NEXT STEPS (optional)
+1. 5-seed Hybrid vs LSTM for a significance attempt (may still be underpowered).
+2. Graph-level drift-pooling model (set-pooling of per-node drift) as a fix that reconciles discriminator + ablation.
+3. Convert paper/report.md to ACM LaTeX template for submission.
