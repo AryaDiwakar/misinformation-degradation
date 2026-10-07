@@ -35,6 +35,7 @@ data/       Dataset loaders and crawling utilities; raw UPFD data is not tracked
 features/   Drift and representation feature construction
 models/     GNN, LSTM, hybrid, and drift-pooling models
 pipeline/   Shared model registry, validation, checkpoints, and truncation utilities
+demo/       Optional Streamlit demonstration
 scripts/    Analysis, evaluation, ablation, and figure-generation scripts
 figures/    Figures used in the paper draft
 results/    Selected verified JSON result artifacts
@@ -78,10 +79,26 @@ python3 -m pytest -q
 python scripts/run_discriminator_robustness.py
 
 # Three-seed early-detection evaluation
-python scripts/run_early_detection.py --seeds 1,2,3
+python3 scripts/run_early_detection.py --seeds 1,2,3
 
 # Multi-seed benchmark evaluation for the primary dataset
-python multiseed.py --subset gossipcop --seeds 1,2,3 --out results/gossipcop_reproduction.json
+python3 multiseed.py --subset gossipcop --seeds 1,2,3 --out results/gossipcop_reproduction.json
+
+# Validate the tracked paper artifacts
+python3 scripts/validate_results.py
+
+# Create an inference example and run the prediction CLI
+python3 scripts/create_sample_cascade.py
+python3 predict.py \
+  --checkpoint checkpoints/hybrid_gossipcop_seed1.pt \
+  --input examples/sample_cascade.npz
+
+# Start the optional Streamlit demo
+pip install -r requirements-demo.txt
+streamlit run demo/app.py
+
+# Run the complete compute-intensive reproduction plan
+python3 scripts/run_reproduction.py --seeds 1,2,3
 ```
 
 Most training runs are compute-intensive. Apple Silicon uses MPS when available; otherwise the scripts fall back to CPU.
@@ -94,7 +111,7 @@ The current manuscript is available in [`paper/report.md`](paper/report.md), [`p
 
 ## Status
 
-Active research repository. The manuscript and saved results represent the current reproducible protocol; older or explicitly invalidated result files are excluded from the tracked artifact set.
+Active research repository. The canonical training, evaluation, inference, and demo paths are complete; the manuscript and saved results represent the current reproducible protocol. Older or explicitly invalidated result files are excluded from the tracked artifact set.
 
 ## Citation
 

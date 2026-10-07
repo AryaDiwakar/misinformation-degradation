@@ -5,7 +5,6 @@ import sys
 
 import numpy as np
 import torch
-import yaml
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     roc_auc_score, average_precision_score
@@ -16,6 +15,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from data.upfd.loader import UPFDGraphDataset, get_upfd_loaders
 from models.early_detector import EarlyDetector
 from pipeline.checkpoints import load_checkpoint
+from pipeline.config import load_config
 from pipeline.models import uses_drift_auxiliary_loss
 
 
@@ -105,8 +105,7 @@ def main():
     parser.add_argument("--skip-baselines", action="store_true")
     args = parser.parse_args()
 
-    with open(args.config, "r") as f:
-        config = yaml.safe_load(f)
+    config = load_config(args.config)
 
     if args.device:
         device = torch.device(args.device)

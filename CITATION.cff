@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+title: "Feature Degradation in Misinformation Propagation"
+message: "If this work supports your research, please cite the repository and associated paper draft."
+authors:
+  - family-names: Diwakar
+    given-names: Arya
+repository-code: https://github.com/AryaDiwakar/misinformation-degradation
+version: 1.0.0
+date-released: 2026-10-07
+license: MIT
+keywords:
+  - misinformation detection
+  - graph neural networks
+  - fake news
+  - propagation cascades
+  - feature drift

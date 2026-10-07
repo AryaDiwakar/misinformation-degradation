@@ -9,7 +9,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import yaml
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -20,6 +19,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from data.upfd.loader import UPFDGraphDataset, collate_fn
 from features.drift import compute_drift
 from pipeline.checkpoints import save_checkpoint
+from pipeline.config import load_config
 from pipeline.data_validation import validate_upfd_dataset
 from pipeline.models import build_model, canonical_model_name, uses_drift_auxiliary_loss
 
@@ -157,8 +157,7 @@ def evaluate(model, loader, criterion, device, use_drift=False):
 def main():
     args = parse_args()
 
-    with open(args.config, "r") as f:
-        config = yaml.safe_load(f)
+    config = load_config(args.config)
 
     model_name = canonical_model_name(args.model or config["model"]["name"])
     training_config = config.get("training", {})
