@@ -1,6 +1,30 @@
 # Demo
 
-Install the optional demo dependency and start the Streamlit interface:
+Two Streamlit demos.
+
+## 1. Drift Explorer (recommended — shows the actual finding)
+
+Interactive view of the paper's core claim: **fake news drifts less than real news**.
+
+```bash
+python3 scripts/build_demo_cache.py          # one-time: precomputes the test-split summary
+streamlit run demo/drift_explorer.py
+```
+
+Tabs:
+- **The Finding** — real-vs-fake drift histogram + per-hop bars over all 3,826
+  GossipCop test cascades (the 0.89 fake/real ratio) and the drift-only discriminator
+  story (0.87 AUC full, 0.79 AUC at 10% truncation).
+- **Cascade Explorer** — pick a real or fake test cascade, see its propagation tree
+  colored by per-node drift.
+- **Live Predictor** — upload an `.npz` cascade (or reuse a cached example) and get a
+  HybridDegradLSTM prediction with per-hop drift. Needs a trained checkpoint:
+
+```bash
+python3 train.py --config configs/default.yaml --model hybrid --seed 1
+```
+
+## 2. Single-cascade predictor (the original app)
 
 ```bash
 pip install -r requirements-demo.txt

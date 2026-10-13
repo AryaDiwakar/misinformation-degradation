@@ -95,7 +95,8 @@ python3 predict.py \
 
 # Start the optional Streamlit demo
 pip install -r requirements-demo.txt
-streamlit run demo/app.py
+python3 scripts/build_demo_cache.py   # one-time: precompute the test-split drift cache
+streamlit run demo/drift_explorer.py  # science demo (finding + cascade explorer + predictor)
 
 # Run the complete compute-intensive reproduction plan
 python3 scripts/run_reproduction.py --seeds 1,2,3

@@ -8,6 +8,15 @@
 
 > Fake news propagates with approximately 11% less feature drift than real news (p < 1e-70, confirmed on two independent datasets). We introduce *drift* — the per-node feature degradation of content as it propagates through a social network cascade — and show it is (1) a statistically robust, cross-dataset property of misinformation propagation, (2) discriminative in isolation (a drift-only random forest reaches 0.87 AUC on GossipCop with **no text or graph features**), and (3) a useful signal for model design. We propose **HybridDegradLSTM**, which fuses a bidirectional LSTM over cascade order with a drift-aware propagation GNN, achieving state-of-the-art fake news detection (95.85% accuracy / 0.9876 AUC on GossipCop, 3-seed). We additionally report an honest partial-cascade analysis: all models degrade under truncation, per-node drift features do *not* help the classifier, yet the *aggregate* drift signal remains discriminative at 10% cascade size (0.79 AUC). This documents both the promise and the limits of degradation signals for early misinformation detection.
 
+> ⚠️ **Positioning note (source of truth: [`claims_and_baselines.md`](claims_and_baselines.md)).**
+> The abstract's "state-of-the-art" claim for HybridDegradLSTM is **not yet defensible**:
+> the margin over BaselineLSTM is +0.24pt **not significant** (p = 0.118 at n=5), and
+> published UPFD baselines on the same split report 96.38 (GCNFN) / 97.23 (UPFD) vs our
+> 95.85%. Before submission, rephrase to "best in our six-model comparison and
+> competitive with published UPFD results (within ≈1pt) while fully explainable."
+> The strong, review-proof claims are contribution 1 (drift phenomenon) and 2
+> (drift-only discriminator). See `claims_and_baselines.md` for the locked tables.
+
 ---
 
 ## 1. Introduction

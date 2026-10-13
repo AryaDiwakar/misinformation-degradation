@@ -32,9 +32,13 @@ data/upfd/raw/
 # Generated result files. Keep the verified artifacts used by the paper.
 results/*
 !results/significance.json
+!results/significance_5seed.json
 !results/drift_discriminator_robustness.json
 !results/early_detection_multiseed.json
 !results/ablations_10pct.json
+
+# Derived demo cache (regenerate with scripts/build_demo_cache.py)
+demo/assets/
 
 # Presentation and document exports are kept out of the source repository.
 *.pptx
