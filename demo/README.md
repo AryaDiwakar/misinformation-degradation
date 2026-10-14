@@ -21,7 +21,8 @@ Tabs:
   HybridDegradLSTM prediction with per-hop drift. Needs a trained checkpoint:
 
 ```bash
-python3 train.py --config configs/default.yaml --model hybrid --seed 1
+python3 multiseed.py --subset gossipcop --models Hybrid --seeds 1 \
+  --out results/_canonical_hybrid_seed1.json --checkpoint-dir checkpoints
 ```
 
 ## 2. Single-cascade predictor (the original app)

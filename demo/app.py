@@ -25,7 +25,10 @@ uploaded = st.file_uploader("Upload a cascade (.npz)", type=["npz"])
 
 if not os.path.isfile(checkpoint_path):
     st.info("Train a checkpoint first, then enter its path in the sidebar.")
-    st.code("python3 train.py --config configs/default.yaml --model hybrid --seed 1")
+    st.code(
+        "python3 multiseed.py --subset gossipcop --models Hybrid --seeds 1 "
+        "--out results/_canonical_hybrid_seed1.json --checkpoint-dir checkpoints"
+    )
     st.stop()
 
 if uploaded is None:

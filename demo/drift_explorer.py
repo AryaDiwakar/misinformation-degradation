@@ -222,7 +222,10 @@ def page_predictor():
     if checkpoint is None:
         st.warning(
             "No checkpoint available. Train one with:\n\n"
-            "```\npython3 train.py --config configs/default.yaml --model hybrid --seed 1\n```"
+            "```\n"
+            "python3 multiseed.py --subset gossipcop --models Hybrid --seeds 1 "
+            "--out results/_canonical_hybrid_seed1.json --checkpoint-dir checkpoints\n"
+            "```"
         )
         return
 

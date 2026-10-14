@@ -16,6 +16,8 @@ from models.baseline_lstm import BaselineLSTM
 from models.degradation_gnn import DegradationGNN
 from models.hybrid import HybridDegradLSTM
 from models.drift_pool import DriftPoolHybrid, DriftPoolOnly
+from pipeline.checkpoints import save_checkpoint
+from pipeline.models import canonical_model_name
 
 DEVICE = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
@@ -46,6 +48,7 @@ def train_and_eval(model_cls, train_ds, val_ds, test_ds, subset, seed, epochs):
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-5)
     crit = torch.nn.BCEWithLogitsLoss()
     best_acc, best_state, patience, bad = 0.0, None, 8, 0
+    best_epoch, best_vloss = 0, float("inf")
 
     for ep in range(1, epochs + 1):
         model.train()
@@ -58,7 +61,7 @@ def train_and_eval(model_cls, train_ds, val_ds, test_ds, subset, seed, epochs):
             opt.step()
 
         model.eval()
-        vc, vs = 0, 0
+        vc, vs, vloss = 0, 0, 0.0
         with torch.no_grad():
             for batch in vl:
                 batch = batch.to(DEVICE)
@@ -66,9 +69,11 @@ def train_and_eval(model_cls, train_ds, val_ds, test_ds, subset, seed, epochs):
                 logits = torch.cat([model(d) for d in batch.to_data_list()], dim=0)
                 vc += ((torch.sigmoid(logits) > 0.5).float() == labels).sum().item()
                 vs += labels.size(0)
+                vloss += crit(logits, labels).item() * labels.size(0)
         vacc = vc / max(vs, 1)
         if vacc > best_acc:
             best_acc = vacc
+            best_epoch, best_vloss = ep, vloss / max(vs, 1)
             bad = 0
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
         else:
@@ -87,12 +92,13 @@ def train_and_eval(model_cls, train_ds, val_ds, test_ds, subset, seed, epochs):
             probs.extend(torch.sigmoid(logits).cpu().numpy().flatten().tolist())
     ys, probs = np.array(ys), np.array(probs)
     preds = (probs > 0.5).astype(float)
-    return {
+    metrics = {
         "accuracy": float(accuracy_score(ys, preds)),
         "f1": float(f1_score(ys, preds, zero_division=0)),
         "auc_roc": float(roc_auc_score(ys, probs)) if len(np.unique(ys)) > 1 else 0.0,
         "auc_pr": float(average_precision_score(ys, probs)) if len(np.unique(ys)) > 1 else 0.0,
     }
+    return metrics, model, best_epoch, best_vloss
 
 
 def main():
@@ -101,6 +107,11 @@ def main():
     ap.add_argument("--seeds", default="1,2,3")
     ap.add_argument("--models", default=None)
     ap.add_argument("--out", required=True)
+    ap.add_argument(
+        "--checkpoint-dir",
+        default=None,
+        help="If set, save each model/seed's best-val-accuracy checkpoint here.",
+    )
     args = ap.parse_args()
 
     seeds = [int(s) for s in args.seeds.split(",")]
@@ -109,6 +120,8 @@ def main():
     train_ds = UPFDGraphDataset(root="./data/upfd/raw", subset=args.subset, feature_type="bert", split="train")
     val_ds = UPFDGraphDataset(root="./data/upfd/raw", subset=args.subset, feature_type="bert", split="val")
     test_ds = UPFDGraphDataset(root="./data/upfd/raw", subset=args.subset, feature_type="bert", split="test")
+
+    input_dim = train_ds[0].x.shape[1]
 
     results = {}
     if os.path.exists(args.out):
@@ -125,14 +138,48 @@ def main():
             if any(m.get("seed") == seed for m in metrics):
                 continue
             t0 = time.time()
-            m = train_and_eval(MODELS[name], train_ds, val_ds, test_ds, args.subset, seed, EPOCHS[args.subset])
+            m, model, best_epoch, best_vloss = train_and_eval(
+                MODELS[name], train_ds, val_ds, test_ds, args.subset, seed, EPOCHS[args.subset]
+            )
             m["seed"] = seed
             metrics.append(m)
             results[name] = {"per_seed": metrics}
             print(f"[{args.subset}] {name} seed={seed}: Acc={m['accuracy']:.4f} AUCROC={m['auc_roc']:.4f} ({time.time()-t0:.0f}s)", flush=True)
             with open(args.out, "w") as f:
                 json.dump(results, f, indent=2)
-            print(f"  -> checkpoint saved", flush=True)
+            if args.checkpoint_dir:
+                registry_name = canonical_model_name(name)
+                ckpt_path = os.path.join(
+                    args.checkpoint_dir, f"{registry_name}_{args.subset}_seed{seed}.pt"
+                )
+                save_checkpoint(
+                    ckpt_path,
+                    model,
+                    registry_name,
+                    {
+                        "input_dim": input_dim,
+                        "hidden_dim": 128,
+                        "num_layers": 2,
+                        "dropout": 0.3,
+                        "name": registry_name,
+                    },
+                    {
+                        "subset": args.subset,
+                        "epochs": EPOCHS[args.subset],
+                        "batch_size": BS[args.subset],
+                        "optimizer": "AdamW",
+                        "lr": 1e-3,
+                        "weight_decay": 1e-5,
+                        "protocol": "multiseed",
+                        "selection_metric": "val_accuracy",
+                    },
+                    epoch=best_epoch,
+                    best_val_loss=best_vloss,
+                    seed=seed,
+                )
+                print(f"  -> checkpoint saved: {ckpt_path}", flush=True)
+            else:
+                print("  -> checkpoint not saved (pass --checkpoint-dir to save)", flush=True)
         mets = [m for m in metrics if "seed" in m]
         results[name] = {
             "acc_mean": float(np.mean([m["accuracy"] for m in mets])),

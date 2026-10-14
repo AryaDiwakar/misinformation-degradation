@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.1 - 2026-10-14
+
+- `multiseed.py` now actually saves a structured checkpoint for each model/seed via the
+  new `--checkpoint-dir` flag. Previously it logged "checkpoint saved" without writing
+  one; checkpoints use the same `pipeline.checkpoints` format as `train.py`.
+- Regenerated `checkpoints/hybrid_gossipcop_seed1.pt` from the paper's canonical protocol
+  (plain BCE, best-validation-accuracy) — test acc 0.9574, AUC 0.9875. The demo's Live
+  Predictor now uses the model behind the reported GossipCop Hybrid result rather than
+  the drift-auxiliary-loss variant (`train.py --model hybrid`, which scores 0.9213).
+- Updated `README.md` and the demo docs to point at the canonical training command.
+
 ## 1.1.0 - 2026-10-13
 
 - Added a drift-explorer Streamlit demo (`demo/drift_explorer.py`) with three tabs:

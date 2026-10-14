@@ -63,7 +63,11 @@ Run commands from the repository root after installing the dataset:
 # Validate the local UPFD data before training
 python3 scripts/validate_data.py
 
-# Train the canonical HybridDegradLSTM pipeline
+# Train the paper's canonical HybridDegradLSTM (best-validation-accuracy protocol)
+python3 multiseed.py --subset gossipcop --models Hybrid --seeds 1 \
+  --out results/_canonical_hybrid_seed1.json --checkpoint-dir checkpoints
+
+# Config-driven trainer (multi-task variant with the drift auxiliary loss)
 python3 train.py --config configs/default.yaml --model hybrid --seed 1
 
 # Evaluate a structured checkpoint
@@ -104,7 +108,7 @@ python3 scripts/run_reproduction.py --seeds 1,2,3
 
 Most training runs are compute-intensive. Apple Silicon uses MPS when available; otherwise the scripts fall back to CPU.
 
-The canonical training path writes a metadata-rich checkpoint containing the model architecture, input dimension, dataset, seed, validation score, and full experiment configuration. The existing research runners remain available for reproducing historical comparison tables.
+Both training paths write a metadata-rich checkpoint containing the model architecture, input dimension, dataset, seed, validation score, and full experiment configuration; `multiseed.py --checkpoint-dir` and `train.py` share the same on-disk format. The existing research runners remain available for reproducing historical comparison tables.
 
 ## Paper
 
