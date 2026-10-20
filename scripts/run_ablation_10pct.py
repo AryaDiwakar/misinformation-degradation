@@ -17,34 +17,21 @@ from torch.utils.data import DataLoader
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
 
-from data.upfd.loader import UPFDGraphDataset, collate_fn, build_parent_index, count_children
+from data.upfd.loader import UPFDGraphDataset, collate_fn
 from models.ablation_gnn import AblationGNN
+from pipeline.truncation import truncate_cascade
 
 DEVICE = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
 
 def truncate_graph(graph, fraction):
-    order = graph.hop_depth.argsort()
-    n = graph.x.size(0)
-    keep = max(1, int(n * fraction))
-    keep_nodes = order[:keep]
-    node_map = {old.item(): i for i, old in enumerate(keep_nodes)}
-    mask = torch.zeros(n, dtype=torch.bool)
-    mask[keep_nodes] = True
-    edge_mask = mask[graph.edge_index[0]] & mask[graph.edge_index[1]]
-    new_edge_index = graph.edge_index[:, edge_mask].clone()
-    for i in range(new_edge_index.size(1)):
-        new_edge_index[0, i] = node_map[new_edge_index[0, i].item()]
-        new_edge_index[1, i] = node_map[new_edge_index[1, i].item()]
-    parent = build_parent_index(new_edge_index, keep)
-    n_children = count_children(new_edge_index, keep)
-    return {
-        "x": graph.x[keep_nodes],
-        "edge_index": new_edge_index,
-        "hop_depth": graph.hop_depth[keep_nodes],
-        "parent": parent,
-        "n_children": n_children,
-    }
+    """Truncate a cascade using the shared pipeline implementation.
+
+    The shared helper rebuilds hop depth, parent and child counts for the
+    retained subgraph, so truncated drift targets stay consistent with the
+    full-cascade ones.
+    """
+    return truncate_cascade(graph, fraction)
 
 
 @torch.no_grad()

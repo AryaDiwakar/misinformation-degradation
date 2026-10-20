@@ -1,21 +1,26 @@
 """Model registry used by training, evaluation, and inference."""
 
+import re
 from typing import Any, Dict
 
 from models.baseline_lstm import BaselineLSTM
 from models.baselines import BiGCNModel, GATModel, GCNModel
 from models.degradation_gnn import DegradationGNN
+from models.degradation_trajectory import DegradationTrajectoryNetwork
 from models.drift_pool import DriftPoolHybrid, DriftPoolOnly
 from models.hybrid import HybridDegradLSTM
 
 
 MODEL_ALIASES = {
     "baseline_lstm": "baseline_lstm",
+    "baselinelstm": "baseline_lstm",
     "lstm": "baseline_lstm",
     "degradation_gnn": "degradation_gnn",
     "degradgnn": "degradation_gnn",
+    "degrad_gnn": "degradation_gnn",
     "hybrid": "hybrid",
     "hybrid_degrad_lstm": "hybrid",
+    "hybriddegradlstm": "hybrid",
     "drift_pool": "drift_pool",
     "driftpool": "drift_pool",
     "drift_pool_only": "drift_pool_only",
@@ -23,6 +28,9 @@ MODEL_ALIASES = {
     "gcn": "gcn",
     "gat": "gat",
     "bigcn": "bigcn",
+    "bi_gcn": "bigcn",
+    "dtn": "dtn",
+    "degradation_trajectory": "dtn",
 }
 
 MODEL_CLASSES = {
@@ -34,12 +42,27 @@ MODEL_CLASSES = {
     "gcn": GCNModel,
     "gat": GATModel,
     "bigcn": BiGCNModel,
+    "dtn": DegradationTrajectoryNetwork,
 }
 
 
 def canonical_model_name(name: str) -> str:
-    """Return the stable registry name for a model alias."""
-    key = name.strip().lower().replace("-", "_").replace(" ", "_")
+    """Return the stable registry name for a model alias.
+
+    Handles snake_case, kebab-case, spaces and CamelCase (``BaselineLSTM``,
+    ``HybridDegradLSTM``) so that every registered spelling resolves.
+    """
+    raw = name.strip()
+    key = raw.lower().replace("-", "_").replace(" ", "_")
+    if key in MODEL_ALIASES:
+        return MODEL_ALIASES[key]
+    # CamelCase -> snake_case, keeping acronyms together:
+    # "BaselineLSTM" -> "baseline_lstm", "DegradGNN" -> "degrad_gnn".
+    camel = re.sub(
+        r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_", raw
+    ).lower().replace("-", "_").replace(" ", "_")
+    if camel in MODEL_ALIASES:
+        return MODEL_ALIASES[camel]
     try:
         return MODEL_ALIASES[key]
     except KeyError as exc:
@@ -65,6 +88,9 @@ def build_model(name: str, input_dim: int, config: Dict[str, Any] | None = None)
         kwargs["use_pool"] = bool(config.get("use_pool", True))
         kwargs["use_tree"] = bool(config.get("use_tree", True))
     elif model_name == "drift_pool_only":
+        # DriftPoolOnly has no message-passing layers.
+        kwargs.pop("num_layers")
+    elif model_name == "dtn":
         kwargs.pop("num_layers")
     elif model_name in {"gcn", "gat", "bigcn"}:
         kwargs.pop("bidirectional", None)

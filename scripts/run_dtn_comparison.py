@@ -24,36 +24,19 @@ from models.degradation_gnn import DegradationGNN
 from models.hybrid import HybridDegradLSTM
 from models.degradation_trajectory import DegradationTrajectoryNetwork
 from features.drift import compute_drift
+from pipeline.truncation import truncate_cascade
 
 DEVICE = torch.device("mps" if torch.backends.mps.is_available()
                        else "cuda" if torch.cuda.is_available() else "cpu")
 
 
 def truncate_graph(graph, fraction):
-    device = graph.x.device
-    order = graph.hop_depth.argsort()
-    n = graph.x.size(0)
-    keep = max(2, int(n * fraction))
-    keep_nodes = order[:keep]
-    node_map = {old.item(): i for i, old in enumerate(keep_nodes)}
-    mask = torch.zeros(n, dtype=torch.bool, device=device)
-    mask[keep_nodes] = True
-    edge_mask = mask[graph.edge_index[0]] & mask[graph.edge_index[1]]
-    new_edge_index = graph.edge_index[:, edge_mask].clone()
-    for i in range(new_edge_index.size(1)):
-        new_edge_index[0, i] = node_map[new_edge_index[0, i].item()]
-        new_edge_index[1, i] = node_map[new_edge_index[1, i].item()]
+    """Truncate a cascade using the shared pipeline implementation.
 
-    from torch_geometric.data import Data
-    truncated = Data(
-        x=graph.x[keep_nodes],
-        edge_index=new_edge_index,
-        y=graph.y,
-        hop_depth=graph.hop_depth[keep_nodes],
-    )
-    if hasattr(graph, "parent") and graph.parent is not None:
-        truncated.parent = graph.parent[keep_nodes]
-    return truncated
+    The shared helper remaps parent indices and rebuilds child counts for the
+    retained subgraph, so truncated drift targets stay valid.
+    """
+    return truncate_cascade(graph, fraction)
 
 
 def move_graph_to_device(graph, device):

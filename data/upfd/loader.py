@@ -33,12 +33,39 @@ def compute_hop_depths(edge_index: torch.Tensor, num_nodes: int) -> torch.Tensor
     return depths
 
 
-def build_parent_index(edge_index: torch.Tensor, num_nodes: int) -> torch.Tensor:
+def build_parent_index(
+    edge_index: torch.Tensor,
+    num_nodes: int,
+    hop_depth: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Assign each node its parent in the propagation tree.
+
+    The UPFD edge list is directed (parent -> child), so the first incoming
+    edge of a node identifies its parent. When ``hop_depth`` is supplied the
+    choice is disambiguated by depth: the parent is the candidate exactly one
+    hop above. This keeps the assignment correct even if the edge list is
+    symmetrised, where the root would otherwise pick up a child as its
+    "parent".
+    """
     parent = torch.full((num_nodes,), -1, dtype=torch.long)
     src, dst = edge_index[:, edge_index[0] != edge_index[1]]
+    candidates: dict = {}
     for u, v in zip(src.tolist(), dst.tolist()):
-        if parent[v] == -1:
-            parent[v] = u
+        candidates.setdefault(v, []).append(u)
+
+    if hop_depth is not None:
+        hop = hop_depth.tolist()
+        for v, options in candidates.items():
+            if hop[v] == 0:
+                # The root has no parent, by definition.
+                continue
+            expected = hop[v] - 1
+            matching = [u for u in options if hop[u] == expected]
+            parent[v] = matching[0] if matching else options[0]
+        return parent
+
+    for v, options in candidates.items():
+        parent[v] = options[0]
     return parent
 
 
@@ -93,7 +120,7 @@ class UPFDGraphDataset(Dataset):
             g_edge_index -= node_offset
             g_x = x[nodes]
             hop_depth = compute_hop_depths(g_edge_index, nodes.size(0))
-            parent = build_parent_index(g_edge_index, nodes.size(0))
+            parent = build_parent_index(g_edge_index, nodes.size(0), hop_depth)
             n_children = count_children(g_edge_index, nodes.size(0))
             data = Data(
                 x=g_x,

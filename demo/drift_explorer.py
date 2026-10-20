@@ -37,6 +37,18 @@ ASSETS = ROOT / "demo" / "assets"
 REAL = "#1f77b4"
 FAKE = "#d62728"
 
+
+def show_figure(fig):
+    """Render a matplotlib figure, using full width where Streamlit supports it.
+
+    ``st.pyplot(width="stretch")`` requires Streamlit >= 1.49; older versions
+    only accept a fixed ``use_container_width`` flag.
+    """
+    try:
+        st.pyplot(fig, width="stretch")
+    except TypeError:
+        st.pyplot(fig, use_container_width=True)
+
 st.set_page_config(page_title="Misinformation Drift Explorer", page_icon="〰️", layout="wide")
 st.title("Misinformation Drift Explorer")
 st.caption(
@@ -120,19 +132,24 @@ def draw_tree(ax, graph_arrays, drift, title):
 
 def page_finding(summary):
     st.header("The finding")
+    n_cascades = int(summary.get("n_cascades", [0])[0])
+    n_nodes = int(summary["real_nodes"][0] + summary["fake_nodes"][0])
     st.markdown(
-        "Across **{} test cascades**, fake-news nodes show less content drift from "
-        "their parent than real-news nodes. The effect emerges at propagation depth "
-        "≥ 2 and holds on a second dataset (PolitiFact).".format(
-            f"{summary['real_nodes'][0] + summary['fake_nodes'][0]:,}"
-        )
+        "Across **{:,} test cascades** ({:,} nodes), fake-news nodes show slightly "
+        "less content drift from their parent than real-news nodes. The effect is "
+        "largest at propagation depth ≥ 2 and holds on a second dataset "
+        "(PolitiFact).".format(n_cascades, n_nodes)
     )
 
     real = summary["real_mag"]
     fake = summary["fake_mag"]
-    real_mean = float(real.mean())
-    fake_mean = float(fake.mean())
+    # Use the full-split means for the headline numbers. The histogram arrays
+    # are subsampled to keep the cache small, so their means carry a small
+    # sampling error; the stored full means are exact.
+    real_mean = float(summary.get("real_mag_full_mean", [real.mean()])[0])
+    fake_mean = float(summary.get("fake_mag_full_mean", [fake.mean()])[0])
     ratio = fake_mean / real_mean
+    standardized = float(summary.get("hop_standardized_ratio", [float("nan")])[0])
 
     col1, col2, col3 = st.columns(3)
     col1.metric("Real mean drift", f"{real_mean:.2f}")
@@ -162,13 +179,23 @@ def page_finding(summary):
     axes[1].set_ylabel("Mean drift magnitude")
     axes[1].set_title("Drift by propagation depth")
     axes[1].legend()
-    st.pyplot(fig, width='stretch')
+    show_figure(fig)
     plt.close(fig)
 
+    if standardized == standardized:  # not NaN
+        st.caption(
+            f"Pooled ratio (fake/real) = {ratio:.3f}. After standardising over "
+            f"propagation depth — which removes the difference in how deep the "
+            f"two classes' cascades go — the ratio is {standardized:.3f}. The "
+            "pooled figure mixes the content effect with a structural one."
+        )
+
     st.info(
-        "A drift-only random forest (12 aggregate statistics, no text and no graph "
-        "learning) reaches ~0.87 AUC on this dataset and still ~0.79 AUC when only "
-        "the first 10% of each cascade is visible."
+        "A random forest over 12 aggregate cascade statistics reaches ~0.88 AUC "
+        "on this dataset. Note that only 4 of those 12 statistics are content "
+        "drift; 6 are structural (depth, children) and 2 are pure cascade size. "
+        "Content drift on its own reaches ~0.85 AUC, and cascade size alone "
+        "~0.79 AUC."
     )
 
 
@@ -196,7 +223,7 @@ def page_cascades(examples):
     scatter = draw_tree(ax, entry["arrays"], drift, f"{labels[entry['label']]} cascade #{entry['graph_index']}")
     colorbar = fig.colorbar(scatter, ax=ax, fraction=0.03, pad=0.02)
     colorbar.set_label("drift magnitude (L2)")
-    st.pyplot(fig, width='stretch')
+    show_figure(fig)
     plt.close(fig)
     st.caption("Node colour is the per-node drift from its parent; root drift is zero by definition.")
 
@@ -211,7 +238,7 @@ def resolve_checkpoint():
         return (
             legacy,
             "baseline_lstm",
-            "legacy BaselineLSTM checkpoint (fallback — the canonical hybrid is still training)",
+            "legacy BaselineLSTM checkpoint (fallback — no canonical hybrid checkpoint found)",
         )
     return None, None, None
 

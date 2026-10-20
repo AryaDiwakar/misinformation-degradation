@@ -20,7 +20,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seeds", default="1,2,3")
     parser.add_argument("--subset", choices=["gossipcop", "politifact", "both"], default="both")
-    parser.add_argument("--stages", default="validate,benchmark,early,discriminator,ablation")
+    parser.add_argument(
+        "--stages",
+        default=(
+            "validate,benchmark,early,discriminator,decomposition,"
+            "standardized,ablation"
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     stages = {stage.strip() for stage in args.stages.split(",") if stage.strip()}
@@ -44,6 +50,8 @@ def main():
                     "GCN,GAT,BiGCN,BaselineLSTM,DegradGNN,Hybrid",
                     "--out",
                     f"results/reproduction_{subset}.json",
+                    "--checkpoint-dir",
+                    "checkpoints",
                 ],
                 args.dry_run,
             )
@@ -64,7 +72,39 @@ def main():
         )
 
     if "discriminator" in stages:
-        run([python, "scripts/run_discriminator_robustness.py"], args.dry_run)
+        # Write to a separate file so the tracked paper artifact is not
+        # overwritten by a reproduction run.
+        run(
+            [
+                python,
+                "scripts/run_discriminator_robustness.py",
+                "--out",
+                "results/reproduction_drift_discriminator.json",
+            ],
+            args.dry_run,
+        )
+
+    if "decomposition" in stages:
+        run(
+            [
+                python,
+                "scripts/analysis_discriminator_decomposition.py",
+                "--out",
+                "results/reproduction_discriminator_decomposition.json",
+            ],
+            args.dry_run,
+        )
+
+    if "standardized" in stages:
+        run(
+            [
+                python,
+                "scripts/analysis_drift_standardized.py",
+                "--out",
+                "results/reproduction_drift_standardized.json",
+            ],
+            args.dry_run,
+        )
 
     if "ablation" in stages:
         run(
@@ -73,6 +113,15 @@ def main():
                 "scripts/run_ablation_10pct.py",
                 "--out",
                 "results/reproduction_ablations_10pct.json",
+            ],
+            args.dry_run,
+        )
+        run(
+            [
+                python,
+                "scripts/run_ablation_100pct.py",
+                "--out",
+                "results/reproduction_ablations_100pct.json",
             ],
             args.dry_run,
         )

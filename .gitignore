@@ -34,8 +34,14 @@ results/*
 !results/significance.json
 !results/significance_5seed.json
 !results/drift_discriminator_robustness.json
+!results/drift_discriminator_decomposition.json
+!results/drift_standardized.json
 !results/early_detection_multiseed.json
+!results/early_detection_driftpool.json
+!results/ablations.json
 !results/ablations_10pct.json
+!results/multiseed_all.json
+!results/multiseed_driftpool.json
 
 # Derived demo cache (regenerate with scripts/build_demo_cache.py)
 demo/assets/

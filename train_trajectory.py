@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from data.upfd.loader import UPFDGraphDataset, collate_fn
 from models.degradation_gnn import DegradationGNN
 from models.trajectory_head import TrajectoryPredictor, predict_degradation_curve
+from pipeline.checkpoints import load_checkpoint
 
 DEVICE = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 print(f"Device: {DEVICE}")
@@ -93,8 +94,11 @@ def train_trajectory_predictor(
 ):
     """Load a trained GNN, extract drift sequences, train trajectory predictor."""
     print(f"Loading GNN from {gnn_checkpoint}")
-    gnn = DegradationGNN(input_dim=768).to(DEVICE)
-    gnn.load_state_dict(torch.load(gnn_checkpoint, map_location=DEVICE))
+    # Accepts the structured checkpoints written by the canonical pipeline as
+    # well as a legacy raw state dict.
+    gnn, _metadata = load_checkpoint(
+        gnn_checkpoint, DEVICE, model_name="degradation_gnn"
+    )
     gnn.eval()
 
     ds = UPFDGraphDataset(root="./data/upfd/raw", subset=subset, feature_type="bert", split="train")

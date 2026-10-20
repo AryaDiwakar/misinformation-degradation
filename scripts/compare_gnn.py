@@ -1,18 +1,32 @@
-"""Controlled: train DegradGNN vs AblationGNN(Full) identically, eval both harnesses."""
-import os, sys
+"""Controlled: train DegradGNN vs AblationGNN(Full) identically, eval both harnesses.
+
+This cross-checks that the two evaluation harnesses used in the paper (the
+ablation script's inline evaluator and the shared ``EarlyDetector``) agree on
+the same trained model, so a difference in reported numbers can be attributed
+to the protocol rather than to an implementation mismatch.
+
+Run as a script::
+
+    python3 scripts/compare_gnn.py
+"""
+
+import os
+import sys
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-sys.path.insert(0, '.')
-os.environ['PYTORCH_MPS_HIGH_WATERMARK_RATIO'] = '0.0'
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
 
 from data.upfd.loader import UPFDGraphDataset, collate_fn
-from models.degradation_gnn import DegradationGNN
 from models.ablation_gnn import AblationGNN
+from models.degradation_gnn import DegradationGNN
 from models.early_detector import EarlyDetector
-from scripts.run_ablation_10pct import truncate_graph, evaluate, DataLike
+from scripts.run_ablation_10pct import DataLike, truncate_graph
 
-DEVICE = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
+DEVICE = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
 
 def train(model, tl, vl):
@@ -54,34 +68,66 @@ def my_eval(model, graphs):
     probs, ys = [], []
     with torch.no_grad():
         for g in graphs:
-            x = g["x"].to(DEVICE); ei = g["edge_index"].to(DEVICE)
-            hd = g["hop_depth"].to(DEVICE); parent = g["parent"].to(DEVICE); nc = g["n_children"].to(DEVICE)
+            x = g["x"].to(DEVICE)
+            ei = g["edge_index"].to(DEVICE)
+            hd = g["hop_depth"].to(DEVICE)
+            parent = g["parent"].to(DEVICE)
+            nc = g["n_children"].to(DEVICE)
             logit = model(DataLike(x, ei, hd, parent, nc))
-            probs.append(torch.sigmoid(logit).item()); ys.append(g["y"])
-    probs = np.array(probs); ys = np.array(ys)
+            probs.append(torch.sigmoid(logit).item())
+            ys.append(g["y"])
+    probs = np.array(probs)
+    ys = np.array(ys)
     return float((((probs > 0.5).astype(float)) == ys).mean())
 
 
-for name, cls in [("DegradGNN", DegradationGNN), ("AblationGNN_Full", lambda d: AblationGNN(d, use_drift=True, use_hop=True))]:
-    torch.manual_seed(1); np.random.seed(1)
-    tr = UPFDGraphDataset(root='./data/upfd/raw', subset='gossipcop', feature_type='bert', split='train')
-    va = UPFDGraphDataset(root='./data/upfd/raw', subset='gossipcop', feature_type='bert', split='val')
-    te = UPFDGraphDataset(root='./data/upfd/raw', subset='gossipcop', feature_type='bert', split='test')
-    tl = DataLoader(tr, batch_size=64, shuffle=True, collate_fn=collate_fn)
-    vl = DataLoader(va, batch_size=64, shuffle=False, collate_fn=collate_fn)
-    model = cls(768).to(DEVICE)
-    model = train(model, tl, vl)
-    model.eval()
+def main():
+    variants = [
+        ("DegradGNN", DegradationGNN),
+        ("AblationGNN_Full", lambda d: AblationGNN(d, use_drift=True, use_hop=True)),
+    ]
+    for name, cls in variants:
+        torch.manual_seed(1)
+        np.random.seed(1)
+        tr = UPFDGraphDataset(
+            root="./data/upfd/raw", subset="gossipcop", feature_type="bert", split="train"
+        )
+        va = UPFDGraphDataset(
+            root="./data/upfd/raw", subset="gossipcop", feature_type="bert", split="val"
+        )
+        te = UPFDGraphDataset(
+            root="./data/upfd/raw", subset="gossipcop", feature_type="bert", split="test"
+        )
+        tl = DataLoader(tr, batch_size=64, shuffle=True, collate_fn=collate_fn)
+        vl = DataLoader(va, batch_size=64, shuffle=False, collate_fn=collate_fn)
+        model = cls(768).to(DEVICE)
+        model = train(model, tl, vl)
+        model.eval()
 
-    full_graphs = [{"x": d.x, "edge_index": d.edge_index, "hop_depth": d.hop_depth,
-                    "parent": d.parent, "n_children": d.n_children, "y": d.y.item()} for d in te]
-    trunc10 = [truncate_graph(d, 0.1) for d in te]
-    for g in trunc10:
-        g["y"] = g.pop("y") if "y" in g else None
-    trunc10 = [dict(truncate_graph(d, 0.1), y=d.y.item()) for d in te]
+        full_graphs = [
+            {
+                "x": d.x,
+                "edge_index": d.edge_index,
+                "hop_depth": d.hop_depth,
+                "parent": d.parent,
+                "n_children": d.n_children,
+                "y": d.y.item(),
+            }
+            for d in te
+        ]
+        trunc10 = [dict(truncate_graph(d, 0.1), y=d.y.item()) for d in te]
 
-    my_full = my_eval(model, full_graphs)
-    my_10 = my_eval(model, trunc10)
-    labels = [d.y.item() for d in te]
-    eds = EarlyDetector(model).evaluate(te, labels, truncations=[0.1, 1.0])
-    print(f"{name}: my_eval full={my_full:.4f} 10pct={my_10:.4f} | EarlyDetector 10pct={eds[0.1]['accuracy']:.4f} 100pct={eds[1.0]['accuracy']:.4f}", flush=True)
+        my_full = my_eval(model, full_graphs)
+        my_10 = my_eval(model, trunc10)
+        labels = [d.y.item() for d in te]
+        eds = EarlyDetector(model).evaluate(te, labels, truncations=[0.1, 1.0])
+        print(
+            f"{name}: my_eval full={my_full:.4f} 10pct={my_10:.4f} | "
+            f"EarlyDetector 10pct={eds[0.1]['accuracy']:.4f} "
+            f"100pct={eds[1.0]['accuracy']:.4f}",
+            flush=True,
+        )
+
+
+if __name__ == "__main__":
+    main()

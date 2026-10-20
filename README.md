@@ -8,8 +8,8 @@ This project introduces **feature drift**, the change between a cascade node's r
 
 The work combines:
 
-- Cross-dataset statistical analysis of drift on UPFD GossipCop and PolitiFact cascades.
-- A drift-only random-forest discriminator using graph-level statistics, without text or learned graph embeddings.
+- Cross-dataset statistical analysis of drift on UPFD GossipCop and PolitiFact cascades, with the propagation-depth composition controlled for.
+- A content-drift-only random-forest discriminator using cascade-level statistics, without a text encoder or learned graph embeddings.
 - DegradGNN, a drift-aware propagation model.
 - HybridDegradLSTM, which fuses a bidirectional LSTM over cascade order with a propagation GNN.
 - Partial-cascade evaluation for early misinformation detection.
@@ -20,13 +20,16 @@ Results below are reported from the current saved experiments. GossipCop is the 
 
 | Finding | Result |
 | --- | --- |
-| Drift difference, GossipCop | Fake-news nodes show approximately 11% less drift than real-news nodes; Welch t = -66.4, p < 1e-16 |
-| Drift difference, PolitiFact | Fake-news nodes show approximately 11% less drift; Welch t = -17.7, p = 6e-70 |
-| Drift-only discriminator | 0.795 accuracy / 0.873 AUC on GossipCop using 12 aggregate features |
-| Drift-only at 10% cascade size | 0.735 accuracy / 0.787 AUC on GossipCop |
+| Drift difference, GossipCop | Fake-news nodes drift less than real-news nodes. Pooled node-level ratio 0.901; **hop-standardised ratio 0.977** (-2.3% at matched depth); cascade-level ratio 0.975, p = 0.048 |
+| Drift difference, PolitiFact | Pooled ratio 0.883; hop-standardised ratio 0.911; cascade-level ratio 0.969, **p = 0.52** (not significant) |
+| Content-drift-only discriminator | **0.846 AUC** on GossipCop using 4 content-drift statistics (no text encoder, no graph learning) |
+| Full 12-statistic discriminator | 0.801 accuracy / 0.879 AUC on GossipCop; cascade *size* alone reaches 0.792 AUC |
+| Drift-only at 10% cascade size | 0.733 accuracy / 0.797 AUC on GossipCop; **0.707 AUC** once the 25.7% of root-only cascades are excluded |
 | HybridDegradLSTM | 0.9585 accuracy / 0.9876 AUC on GossipCop, 3-seed mean |
 
-The HybridDegradLSTM margin over the strong LSTM baseline is not statistically significant at three seeds. Per-node drift features also hurt classifier performance in the ablation, while aggregate drift remains discriminative. These limitations are documented deliberately in the paper rather than hidden behind a single best number.
+> **Note on the drift effect size.** An earlier version of this work reported an "~11% less drift, p < 1e-70" headline. That statistic pools every test node, which mixes the *content* effect with the classes' different cascade shapes (real cascades average 76 nodes vs 39 for fake ones, and are hop-1-heavy). Controlling for propagation depth the effect is ~2.3% on GossipCop and not significant at cascade level on PolitiFact. Both the confounded and the controlled numbers are reported; see `paper/report.md` §5.2 and §6.2, and `results/drift_standardized.json`.
+
+The HybridDegradLSTM margin over the strong LSTM baseline is not statistically significant at three seeds, and it is below published UPFD results on the same split — it is the best model in our own six-model comparison, not a state-of-the-art claim. Per-node drift features also hurt classifier performance in the ablation, while aggregate drift remains discriminative. These limitations are documented deliberately in the paper rather than hidden behind a single best number.
 
 ## Repository Structure
 
@@ -80,7 +83,13 @@ python3 evaluate.py \
 python3 -m pytest -q
 
 # Drift-only discrimination on full and truncated cascades
-python scripts/run_discriminator_robustness.py
+python3 scripts/run_discriminator_robustness.py
+
+# Decompose the discriminator into content / structural / size feature groups
+python3 scripts/analysis_discriminator_decomposition.py
+
+# Re-derive the drift phenomenon with the propagation-depth confound removed
+python3 scripts/analysis_drift_standardized.py
 
 # Three-seed early-detection evaluation
 python3 scripts/run_early_detection.py --seeds 1,2,3
@@ -108,7 +117,9 @@ python3 scripts/run_reproduction.py --seeds 1,2,3
 
 Most training runs are compute-intensive. Apple Silicon uses MPS when available; otherwise the scripts fall back to CPU.
 
-Both training paths write a metadata-rich checkpoint containing the model architecture, input dimension, dataset, seed, validation score, and full experiment configuration; `multiseed.py --checkpoint-dir` and `train.py` share the same on-disk format. The existing research runners remain available for reproducing historical comparison tables.
+Both training paths write a metadata-rich checkpoint containing the model architecture, input dimension, dataset, seed, validation score, and full experiment configuration; `multiseed.py --checkpoint-dir` and `train.py` share the same on-disk format. The two paths use **different protocols** and therefore **different filenames**: `multiseed.py` writes `<model>_<subset>_seed<N>.pt` (plain BCE, best-validation-accuracy — the paper's canonical protocol) while `train.py` writes `<model>_<subset>_seed<N>_trainaug.pt` (drift auxiliary loss, best-validation-loss). This prevents the config-driven trainer from silently replacing the canonical paper checkpoint.
+
+The existing research runners remain available for reproducing historical comparison tables.
 
 ## Paper
 

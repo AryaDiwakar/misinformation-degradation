@@ -114,7 +114,12 @@ for row, subset in enumerate(["gossipcop", "politifact"]):
 
     ax = axes[row][2]
     all_drifts = np.concatenate([d["real_drifts"], d["fake_drifts"]])
-    labels = np.array([0] * len(d["real_drifts"]) + [1] * len(d["fake_drifts"]))
+    # Node-level labels: real_drifts and fake_drifts are per-node drift
+    # vectors, so the label array must be built per node (not per graph).
+    labels = np.concatenate([
+        np.zeros(len(d["real_drifts"]), dtype=np.int64),
+        np.ones(len(d["fake_drifts"]), dtype=np.int64),
+    ])
     rng = np.random.default_rng(0)
     if len(all_drifts) > 20000:
         idx = rng.integers(0, len(all_drifts), 20000)
@@ -168,21 +173,63 @@ print("Fig 3: ablation.png", flush=True)
 abl10 = json.load(open(os.path.join(os.path.dirname(__file__), "..", "results", "ablations_10pct.json")))
 abl100 = json.load(open(os.path.join(os.path.dirname(__file__), "..", "results", "ablations.json")))
 variants = ["Full", "w/o drift", "w/o hop"]
+prior_names = {"Full": "Full (drift+hop+tree)", "w/o drift": "w/o drift", "w/o hop": "w/o hop"}
+# Both files are produced by the same protocol (AblationGNN, seed 1, best
+# validation accuracy), so the two 100% bars agree; the extra variant from
+# the 100%-only script is shown as context.
 full10 = [abl10[v]["full"]["accuracy"] * 100 for v in variants]
 trunc10 = [abl10[v]["truncated_10pct"]["accuracy"] * 100 for v in variants]
-prior_names = {"Full": "Full (drift+hop+tree)", "w/o drift": "w/o drift", "w/o hop": "w/o hop"}
-full100_prior = [abl100[prior_names[v]]["accuracy"] * 100 for v in variants]
-x = np.arange(len(variants)); w = 0.28
-fig, ax = plt.subplots(figsize=(8, 4.5))
-ax.bar(x - w, full10, w, label="100% (re-run)", color=REAL, alpha=0.85)
-ax.bar(x, full100_prior, w, label="100% (prior run)", color="#aec7e8", alpha=0.9)
-ax.bar(x + w, trunc10, w, label="10% truncation", color=FAKE, alpha=0.85)
+full100 = [abl100[prior_names[v]]["accuracy"] * 100 for v in variants]
+extra_variants = [v for v in ("w/o drift+hop", "w/o tree (MLP)", "BERT-MLP") if v in abl100]
+
+x = np.arange(len(variants)); w = 0.35
+fig, ax = plt.subplots(figsize=(8.5, 4.8))
+ax.bar(x - w / 2, full100, w, label="100% cascade", color=REAL, alpha=0.85)
+ax.bar(x + w / 2, trunc10, w, label="10% cascade", color=FAKE, alpha=0.85)
+for bars, values in (
+    (ax.containers[0], full100),
+    (ax.containers[1], trunc10),
+):
+    for bar, value in zip(bars, values):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            value + 1.2,
+            f"{value:.1f}",
+            ha="center",
+            fontsize=8,
+        )
 ax.axhline(0.5 * 100, color="k", ls=":", lw=1)
 ax.set_xticks(x); ax.set_xticklabels(variants)
 ax.set_ylabel("Test accuracy (%)")
 ax.set_title("Ablation: drift/hop features hurt at 100% and 10% (GossipCop)")
-ax.legend()
+ax.legend(loc="lower left", fontsize=9)
 ax.grid(axis="y", alpha=0.3)
+ax.set_ylim(0, 100)
+
+# The remaining 100%-only variants, shown as a separate hatched group so the
+# chart stays on one protocol for the compared variants.
+if extra_variants:
+    extra_acc = [abl100[v]["accuracy"] * 100 for v in extra_variants]
+    offset = len(variants) + 0.4
+    ax.bar(
+        np.arange(len(extra_variants)) + offset,
+        extra_acc,
+        w * 1.6,
+        color="#aec7e8",
+        alpha=0.9,
+        hatch="//",
+        edgecolor="white",
+        label="100% only",
+    )
+    ax.set_xticks(
+        list(x)
+        + list(np.arange(len(extra_variants)) + offset)
+    )
+    ax.set_xticklabels(
+        variants + [v.replace(" (MLP)", "\n(MLP)").replace("+hop", "+hop") for v in extra_variants],
+        fontsize=9,
+    )
+    ax.legend(loc="lower left", fontsize=9)
 plt.tight_layout()
 plt.savefig(os.path.join(OUT, "ablation.png"))
 plt.close()
@@ -315,8 +362,11 @@ try:
     for model, marker, color in [("BaselineLSTM", "o", "#2ca02c"), ("DegradGNN", "s", "#ff7f0e"), ("Hybrid", "^", "#9467bd"), ("DriftPool", "D", "#e377c2")]:
         if model not in ed:
             continue
+        if not all(f"acc_{p}pct_mean" in ed[model] for p in pcts):
+            print(f"  skipping {model}: incomplete early-detection record", flush=True)
+            continue
         means = [ed[model][f"acc_{p}pct_mean"] * 100 for p in pcts]
-        stds = [ed[model][f"acc_{p}pct_std"] * 100 for p in pcts]
+        stds = [ed[model].get(f"acc_{p}pct_std", 0.0) * 100 for p in pcts]
         ax.errorbar(pcts, means, yerr=stds, marker=marker, color=color, label=model, lw=2, markersize=7, capsize=4)
     ax.axhline(0.5 * 100, color="k", ls=":", lw=1, label="random")
     ax.set_xscale("log")

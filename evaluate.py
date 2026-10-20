@@ -164,6 +164,11 @@ def main():
     ece = compute_ece(all_labels, all_probs)
     print(f"  ece: {ece:.4f}")
 
+    # Drift-prediction quality, for models with a drift head.
+    drift_mse = evaluate_drift(model, test_loader, device)
+    if drift_mse is not None:
+        print(f"  drift_head_mse: {drift_mse:.4f}")
+
     # Early detection evaluation
     print("\n--- Early Detection ---")
     all_graphs = []
@@ -193,6 +198,7 @@ def main():
             if key not in {"state_dict", "experiment_config"}
         },
         "full_cascade": {**metrics, "ece": ece},
+        "drift_head_mse": drift_mse,
         "early_detection": {
             str(frac): {key: float(value) for key, value in values.items()}
             for frac, values in results.items()

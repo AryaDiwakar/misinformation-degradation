@@ -125,7 +125,9 @@ def main():
             print(f"[{name}] seed={seed} full={m['full_acc']:.4f} "
                   f"10%={m['pct_10']['accuracy']:.4f} 25%={m['pct_25']['accuracy']:.4f} "
                   f"50%={m['pct_50']['accuracy']:.4f} ({time.time()-t0:.0f}s)", flush=True)
-            results[name] = {"per_seed": metrics}
+            # Preserve any previously stored aggregate keys so a resumed run
+            # does not silently drop them.
+            results[name] = {**results.get(name, {}), "per_seed": metrics}
             with open(args.out, "w") as f:
                 json.dump(results, f, indent=2)
         for pct in [10, 25, 50, 100]:
@@ -138,7 +140,10 @@ def main():
     print("\n=== FINAL (multi-seed early detection) ===")
     for name in model_names:
         r = results.get(name, {})
-        row = "  ".join(f"{pct}%:{r.get(f'acc_{pct}pct_mean', 0):.4f}±{r.get(f'acc_{pct}pct_std', 0):.4f}"
+        if not r:
+            print(f"{name:<12} (no results)")
+            continue
+        row = "  ".join(f"{pct}%:{r.get(f'acc_{pct}pct_mean', float('nan')):.4f}±{r.get(f'acc_{pct}pct_std', float('nan')):.4f}"
                         for pct in [10, 25, 50, 100])
         print(f"{name:<12} {row}")
 

@@ -50,11 +50,28 @@ def test_canonical_train_writes_checkpoint_and_results(tmp_path, monkeypatch):
     )
     train.main()
 
-    checkpoint = tmp_path / "checkpoints" / "hybrid_toy_seed3.pt"
-    result = tmp_path / "results" / "hybrid_toy_seed3.json"
+    # The config-driven trainer uses a distinct filename so it can never
+    # overwrite the canonical multiseed checkpoint for the same model/seed.
+    checkpoint = tmp_path / "checkpoints" / "hybrid_toy_seed3_trainaug.pt"
+    result = tmp_path / "results" / "hybrid_toy_seed3_trainaug.json"
     assert checkpoint.is_file()
     assert result.is_file()
     saved = json.loads(result.read_text())
     assert saved["model"] == "hybrid"
     assert saved["dataset"] == "toy"
     assert saved["checkpoint"] == str(checkpoint)
+    assert saved["protocol"] == "train_config"
+
+
+def test_train_and_multiseed_use_distinct_checkpoint_filenames(tmp_path):
+    """Regression test: both runners used to write the same filename.
+
+    Running the config-driven trainer silently replaced the canonical paper
+    checkpoint with the weaker drift-auxiliary-loss variant.
+    """
+    from pathlib import Path
+
+    train_source = Path("train.py").read_text()
+    multiseed_source = Path("multiseed.py").read_text()
+    assert "_trainaug" in train_source
+    assert "_trainaug" not in multiseed_source

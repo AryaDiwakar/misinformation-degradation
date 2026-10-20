@@ -32,11 +32,36 @@ MODELS = {
     "DriftPoolOnly": DriftPoolOnly,
 }
 
+# Constructor arguments recorded in each checkpoint. These must match the
+# arguments the model is actually built with, otherwise the checkpoint cannot
+# be reloaded (shape mismatches). DriftPoolOnly defaults to hidden_dim=64
+# while the other models default to 128, so the per-model value matters.
+MODEL_CONFIGS = {
+    "GCN": {"hidden_dim": 128, "num_layers": 2, "dropout": 0.3},
+    "GAT": {"hidden_dim": 128, "num_layers": 2, "dropout": 0.3},
+    "BiGCN": {"hidden_dim": 128, "num_layers": 2, "dropout": 0.3},
+    "BaselineLSTM": {"hidden_dim": 128, "num_layers": 2, "dropout": 0.3},
+    "DegradGNN": {"hidden_dim": 128, "num_layers": 2, "dropout": 0.3},
+    "Hybrid": {"hidden_dim": 128, "num_layers": 2, "dropout": 0.3},
+    "DriftPool": {"hidden_dim": 128, "num_layers": 2, "dropout": 0.3},
+    "DriftPoolOnly": {"hidden_dim": 64, "dropout": 0.3},
+}
+
+
+def build_model_for(name, input_dim):
+    """Instantiate a model with the exact configuration stored in checkpoints."""
+    cls = MODELS[name]
+    kwargs = dict(MODEL_CONFIGS[name])
+    if name == "BaselineLSTM":
+        kwargs["bidirectional"] = True
+    return cls(input_dim, **kwargs)
+
 EPOCHS = {"politifact": 50, "gossipcop": 20}
 BS = {"politifact": 32, "gossipcop": 64}
 
 
-def train_and_eval(model_cls, train_ds, val_ds, test_ds, subset, seed, epochs):
+def train_and_eval(model_cls, train_ds, val_ds, test_ds, subset, seed, epochs,
+                   model_config=None):
     torch.manual_seed(seed)
     np.random.seed(seed)
     bs = BS[subset]
@@ -44,7 +69,11 @@ def train_and_eval(model_cls, train_ds, val_ds, test_ds, subset, seed, epochs):
     vl = DataLoader(val_ds, batch_size=bs, shuffle=False, collate_fn=collate_fn)
     tel = DataLoader(test_ds, batch_size=bs, shuffle=False, collate_fn=collate_fn)
 
-    model = model_cls(768).to(DEVICE)
+    if model_config is None:
+        model = model_cls(768).to(DEVICE)
+    else:
+        kwargs = {k: v for k, v in model_config.items() if k != "input_dim"}
+        model = model_cls(768, **kwargs).to(DEVICE)
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-5)
     crit = torch.nn.BCEWithLogitsLoss()
     best_acc, best_state, patience, bad = 0.0, None, 8, 0
@@ -139,7 +168,8 @@ def main():
                 continue
             t0 = time.time()
             m, model, best_epoch, best_vloss = train_and_eval(
-                MODELS[name], train_ds, val_ds, test_ds, args.subset, seed, EPOCHS[args.subset]
+                MODELS[name], train_ds, val_ds, test_ds, args.subset, seed,
+                EPOCHS[args.subset], model_config=MODEL_CONFIGS[name],
             )
             m["seed"] = seed
             metrics.append(m)
@@ -158,10 +188,8 @@ def main():
                     registry_name,
                     {
                         "input_dim": input_dim,
-                        "hidden_dim": 128,
-                        "num_layers": 2,
-                        "dropout": 0.3,
                         "name": registry_name,
+                        **MODEL_CONFIGS[name],
                     },
                     {
                         "subset": args.subset,

@@ -7,7 +7,7 @@ To deploy:
 4. Run php artisan migrate --seed
 5. Set permissions for storage/ and public/uploads/
 
-Admin login: preetha@godigitell.com / IkbQLFLjlyXa
+Admin login: credentials are stored in the deployment team's password manager.
 
 ## Evaluation Aspects
 

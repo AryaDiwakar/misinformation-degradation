@@ -4,10 +4,14 @@ Output: ../project_report.docx  (one doc covering all 8 evaluation sections).
 Run from repo root:  python3 scripts/generate_project_docx.py
 """
 import os
+import sys
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import paper_numbers
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "project_report.docx")
 
@@ -438,55 +442,41 @@ def main():
     add_heading(doc, "6.2  Main classification results (GossipCop, 3 seeds)", 2)
     add_table(doc,
               ["Model", "Accuracy", "F1", "AUC-ROC", "AUC-PR"],
-              [
-                  ["GCN", "0.7823 ± 0.0032", "0.7675", "0.8686", "0.8742"],
-                  ["GAT", "0.9094 ± 0.0086", "0.9099", "0.9646", "0.9670"],
-                  ["BiGCN", "0.9390 ± 0.0011", "0.9388", "0.9798", "0.9811"],
-                  ["DegradGNN", "0.9300 ± 0.0037", "0.9304", "0.9780", "0.9790"],
-                  ["BaselineLSTM", "0.9561 ± 0.0028", "0.9559", "0.9858", "0.9859"],
-                  ["HybridDegradLSTM", "0.9585 ± 0.0030", "0.9584", "0.9876", "0.9873"],
-              ],
-              caption="Table 1. GossipCop test results (3 seeds, mean ± std). HybridDegradLSTM is best on all metrics.")
+              paper_numbers.main_results_table("gossipcop"),
+              caption="Table 1. GossipCop test results (3 seeds, mean ± std).")
 
     add_heading(doc, "6.3  The drift phenomenon (node-level, test sets)", 2)
     add_table(doc,
-              ["Dataset", "Real mean drift", "Fake mean drift", "Ratio (fake/real)", "Welch t", "p-value"],
-              [
-                  ["GossipCop", "7.18", "6.39", "0.890", "-66.4", "< 1e-16"],
-                  ["PolitiFact", "6.05", "5.35", "0.885", "-17.7", "6.05e-70"],
-              ],
-              caption="Table 2. Fake news degrades (drifts) ~11% less than real news, on both datasets.")
+              ["Dataset", "Real mean", "Fake mean", "Pooled ratio", "Hop-std ratio",
+               "Cascade-level ratio", "t", "p"],
+              paper_numbers.drift_table(),
+              caption=("Table 2. The pooled node-level ratio mixes the content effect with the "
+                       "classes' different propagation-depth compositions; the hop-standardised "
+                       "and cascade-level columns isolate the content effect."))
 
     add_heading(doc, "6.4  Drift-only discriminator (12 features, 5-fold)", 2)
     add_table(doc,
-              ["Setting", "GossipCop Acc / AUC", "PolitiFact Acc / AUC"],
-              [
-                  ["Full cascade", "0.795 / 0.873", "0.525 / 0.545"],
-                  ["First 10% of cascade", "0.735 / 0.787", "0.558 / 0.597"],
-              ],
-              caption="Table 3. Random forest on aggregate drift statistics only (no text/graph).")
+              ["Dataset", "Setting", "Acc", "AUC (all 12)", "AUC (content only)",
+               "AUC (size only)", "AUC (10%, no root-only)"],
+              paper_numbers.discriminator_table(),
+              caption=("Table 3. Random forest over aggregate cascade statistics. Only 4 of the "
+                       "12 statistics are content drift; 6 are structural and 2 are cascade size."))
 
     add_heading(doc, "6.5  Early detection (partial-cascade accuracy, GossipCop, 3 seeds)", 2)
     add_table(doc,
               ["Model", "10%", "25%", "50%", "100%"],
-              [
-                  ["BaselineLSTM", "0.787 ± 0.010", "0.914 ± 0.016", "0.947 ± 0.007", "0.954 ± 0.003"],
-                  ["DegradGNN", "0.814 ± 0.025", "0.912 ± 0.009", "0.934 ± 0.002", "0.930 ± 0.004"],
-                  ["HybridDegradLSTM", "0.808 ± 0.017", "0.914 ± 0.020", "0.942 ± 0.010", "0.953 ± 0.005"],
-              ],
+              paper_numbers.early_detection_table(),
               caption="Table 4. Train-on-full, truncate-test protocol. All models degrade sharply at 10%.")
 
     add_heading(doc, "6.6  Ablation (per-node drift/hop features HURT)", 2)
     add_table(doc,
-              ["Variant", "100% Acc (prior)", "100% Acc (re-run)", "10% Acc"],
-              [
-                  ["Full (drift + hop + tree)", "0.9127", "0.9247", "0.7480"],
-                  ["w/o drift", "0.9245", "0.9365", "0.8521"],
-                  ["w/o hop", "0.9221", "0.9354", "0.8220"],
-                  ["w/o drift + hop", "0.9334", "-", "-"],
-                  ["w/o tree (MLP)", "0.9540", "-", "-"],
-              ],
+              ["Variant", "100% Acc", "AUC"],
+              paper_numbers.ablation_table(),
               caption="Table 5. Removing per-node drift/hop features improves accuracy — a design-relevant negative result.")
+    add_table(doc,
+              ["Variant", "100% Acc", "10% Acc"],
+              paper_numbers.ablation_10pct_table(),
+              caption="Table 5b. The same ranking holds under 10% truncation.")
 
     add_heading(doc, "6.7  Trajectory tracing diagnostics (DTN)", 2)
     add_para(doc,
@@ -500,27 +490,14 @@ def main():
 
     add_heading(doc, "6.8  Statistical significance (GossipCop, n = 3)", 2)
     add_table(doc,
-              ["Comparison", "p-value", "Cohen's d", "Interpretation"],
-              [
-                  ["Hybrid vs LSTM (acc)", "0.224", "1.00", "Not significant at n=3; consistent direction"],
-                  ["Hybrid vs LSTM (AUC)", "0.452", "0.54", "Not significant"],
-                  ["Hybrid vs DegradGNN (acc)", "0.020", "3.98", "Significant — LSTM branch helps over GNN-only"],
-              ],
+              ["Comparison", "Mean diff", "t", "p", "Cohen's d"],
+              paper_numbers.significance_table(),
               caption="Table 6. Seed-level paired t-tests.")
 
     add_heading(doc, "6.9  Reproducibility index", 2)
     add_table(doc,
-              ["Artifact", "Path"],
-              [
-                  ["3-seed main results", "results/multiseed_all.json"],
-                  ["Significance/drift statistics", "results/significance.json"],
-                  ["Drift-only discriminator (full vs 10%)", "results/drift_discriminator_robustness.json"],
-                  ["Ablations (100% and 10%)", "results/ablations.json, ablations_10pct.json"],
-                  ["Multi-seed truncation curves", "results/early_detection_multiseed.json"],
-                  ["DTN early-detection / comparison", "results/dtn_early_detection.json, results/dtn_comparison.json (run scripts/train_dtn.py, scripts/run_dtn_comparison.py)"],
-                  ["Figures", "figures/ (drift_analysis, main_results, ablation, discriminator, architecture, example_tree, early_detection)"],
-                  ["Paper draft", "paper/report.md"],
-              ],
+              ["Artifact", "Description", "Status"],
+              paper_numbers.artifact_index(),
               caption="Where everything lives.")
 
     doc.add_page_break()

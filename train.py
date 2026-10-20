@@ -218,7 +218,13 @@ def main():
     model_config["input_dim"] = input_dim
     model_config["name"] = model_name
     model = build_model(model_name, input_dim, model_config).to(device)
-    use_drift = uses_drift_auxiliary_loss(model_name)
+    # The drift auxiliary loss is a multi-task variant. It is *not* the
+    # protocol behind the paper's reported numbers (those come from
+    # multiseed.py, which uses plain BCE). Set training.drift_weight to 0 or
+    # use_drift_aux_loss: false to train without it.
+    use_drift = uses_drift_auxiliary_loss(model_name) and bool(
+        training_config.get("use_drift_aux_loss", True)
+    ) and drift_weight > 0
 
     optimizer = optim.AdamW(
         model.parameters(),
@@ -299,9 +305,13 @@ def main():
 
     checkpoint_dir = config["logging"].get("checkpoint_dir", "checkpoints")
     result_dir = config["logging"].get("result_dir", "results")
-    checkpoint_path = os.path.join(
-        checkpoint_dir, f"{model_name}_{config['data']['subset']}_seed{args.seed}.pt"
-    )
+    # The multiseed runner writes "<model>_<subset>_seed<N>.pt" for the paper's
+    # canonical protocol (plain BCE, best-validation-accuracy selection). This
+    # trainer uses a different protocol (drift auxiliary loss, best-validation
+    # -loss selection), so it must use a distinct filename — otherwise running
+    # it silently replaces the canonical paper checkpoint with a weaker one.
+    tag = f"{model_name}_{config['data']['subset']}_seed{args.seed}_trainaug"
+    checkpoint_path = os.path.join(checkpoint_dir, f"{tag}.pt")
     save_checkpoint(
         checkpoint_path,
         model,
@@ -313,9 +323,7 @@ def main():
         seed=args.seed,
     )
     os.makedirs(result_dir, exist_ok=True)
-    result_path = os.path.join(
-        result_dir, f"{model_name}_{config['data']['subset']}_seed{args.seed}.json"
-    )
+    result_path = os.path.join(result_dir, f"{tag}.json")
     with open(result_path, "w") as handle:
         json.dump(
             {
@@ -329,6 +337,9 @@ def main():
                 "test_accuracy": test_acc,
                 "test_metrics": model_metrics(labels, probs),
                 "checkpoint": checkpoint_path,
+                "protocol": "train_config",
+                "selection_metric": "val_loss",
+                "uses_drift_auxiliary_loss": use_drift,
                 "duration_s": round(time.time() - started, 2),
                 "history": history,
             },

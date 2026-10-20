@@ -7,7 +7,13 @@ from data.upfd.loader import build_parent_index, compute_hop_depths, count_child
 
 
 def truncate_cascade(graph: Data, fraction: float) -> Data:
-    """Keep the shallowest fraction of nodes and rebuild graph metadata."""
+    """Keep the shallowest fraction of nodes and rebuild graph metadata.
+
+    Note that at small fractions many cascades retain only their root node.
+    The root has no parent, so its content drift is zero *by construction* and
+    such cascades carry no drift information at all. Use :func:`is_root_only`
+    to detect them.
+    """
     if not 0 < fraction <= 1:
         raise ValueError("fraction must be greater than 0 and at most 1")
     if graph.x.size(0) == 0:
@@ -27,7 +33,7 @@ def truncate_cascade(graph: Data, fraction: float) -> Data:
     )
     edge_index = node_map[graph.edge_index[:, edge_mask]]
     hop_depth = compute_hop_depths(edge_index.cpu(), keep_count).to(graph.x.device)
-    parent = build_parent_index(edge_index.cpu(), keep_count).to(graph.x.device)
+    parent = build_parent_index(edge_index.cpu(), keep_count, hop_depth.cpu()).to(graph.x.device)
     n_children = count_children(edge_index.cpu(), keep_count).to(graph.x.device)
 
     result = Data(
@@ -41,3 +47,14 @@ def truncate_cascade(graph: Data, fraction: float) -> Data:
         n_nodes=torch.tensor([keep_count], device=graph.x.device),
     )
     return result
+
+
+def is_root_only(graph: Data) -> bool:
+    """Whether a (possibly truncated) cascade contains only its root node.
+
+    A root-only cascade has no parent-child pair, so every content-drift
+    statistic computed on it is zero by construction rather than by
+    measurement. Such cascades must be excluded when evaluating whether
+    drift itself carries signal.
+    """
+    return int(graph.x.size(0)) <= 1

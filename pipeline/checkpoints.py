@@ -60,8 +60,16 @@ def load_checkpoint(
         state_dict = payload["state_dict"]
         metadata = payload
         resolved_name = payload.get("model_name") or model_name
-        resolved_config = dict(payload.get("model_config") or model_config or {})
-        input_dim = int(payload.get("input_dim", resolved_config.get("input_dim", 768)))
+        # The checkpoint's own config wins: it describes the architecture the
+        # weights were trained with, and reloading must reproduce it exactly.
+        stored_config = payload.get("model_config") or {}
+        resolved_config = {**(model_config or {}), **stored_config}
+        input_dim = int(
+            payload.get("input_dim")
+            or stored_config.get("input_dim")
+            or (model_config or {}).get("input_dim")
+            or 768
+        )
     else:
         if not model_name:
             raise ValueError(
@@ -78,7 +86,15 @@ def load_checkpoint(
 
     resolved_config["input_dim"] = input_dim
     model = build_model(resolved_name, input_dim, resolved_config)
-    model.load_state_dict(state_dict)
+    try:
+        model.load_state_dict(state_dict)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"Could not load weights for '{resolved_name}' from {path}. "
+            f"The stored architecture (input_dim={input_dim}, "
+            f"model_config={resolved_config}) does not match the checkpoint "
+            f"weights: {exc}"
+        ) from exc
     model.to(device)
     model.eval()
     return model, metadata

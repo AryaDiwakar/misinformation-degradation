@@ -60,8 +60,6 @@ for ep in range(1, 21):
 model.load_state_dict(best_state)
 model.eval()
 
-ag = [d for batch in test_ds for d in [batch]]
-# rebuild graphs via loader test split
 test_graphs = [d for d in test_ds]
 labels = [d.y.item() for d in test_graphs]
 

@@ -19,8 +19,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
 
 from data.upfd.loader import UPFDGraphDataset
-from models.degradation_trajectory import DegradationTrajectoryNetwork
 from features.drift import compute_drift
+from pipeline.checkpoints import load_checkpoint
 
 DEVICE = torch.device("mps" if torch.backends.mps.is_available()
                        else "cuda" if torch.cuda.is_available() else "cpu")
@@ -99,8 +99,7 @@ def main():
 
     test_ds = UPFDGraphDataset(root="./data/upfd/raw", subset=args.subset,
                                feature_type="bert", split="test")
-    model = DegradationTrajectoryNetwork(input_dim=768).to(DEVICE)
-    model.load_state_dict(torch.load(args.checkpoint, map_location=DEVICE))
+    model, _metadata = load_checkpoint(args.checkpoint, DEVICE, model_name="dtn")
     model.eval()
 
     results = analyze_trajectories(model, test_ds, DEVICE)

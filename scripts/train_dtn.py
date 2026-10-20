@@ -27,35 +27,22 @@ os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
 from data.upfd.loader import UPFDGraphDataset, collate_fn
 from models.degradation_trajectory import DegradationTrajectoryNetwork
 from features.drift import compute_drift
+from pipeline.checkpoints import save_checkpoint
+from pipeline.truncation import truncate_cascade
 
 DEVICE = torch.device("mps" if torch.backends.mps.is_available()
                        else "cuda" if torch.cuda.is_available() else "cpu")
 
 
 def truncate_graph(graph, fraction):
-    device = graph.x.device
-    order = graph.hop_depth.argsort()
-    n = graph.x.size(0)
-    keep = max(2, int(n * fraction))
-    keep_nodes = order[:keep]
-    node_map = {old.item(): i for i, old in enumerate(keep_nodes)}
-    mask = torch.zeros(n, dtype=torch.bool, device=device)
-    mask[keep_nodes] = True
-    edge_mask = mask[graph.edge_index[0]] & mask[graph.edge_index[1]]
-    new_edge_index = graph.edge_index[:, edge_mask].clone()
-    for i in range(new_edge_index.size(1)):
-        new_edge_index[0, i] = node_map[new_edge_index[0, i].item()]
-        new_edge_index[1, i] = node_map[new_edge_index[1, i].item()]
-    from torch_geometric.data import Data
-    truncated = Data(
-        x=graph.x[keep_nodes],
-        edge_index=new_edge_index,
-        y=graph.y,
-        hop_depth=graph.hop_depth[keep_nodes],
-    )
-    if hasattr(graph, "parent") and graph.parent is not None:
-        truncated.parent = graph.parent[keep_nodes]
-    return truncated
+    """Truncate a cascade using the shared pipeline implementation.
+
+    The shared helper remaps parent indices and rebuilds the child counts for
+    the retained subgraph. A local re-implementation previously copied the
+    parent array without remapping it, which produced corrupt drift targets
+    at truncation.
+    """
+    return truncate_cascade(graph, fraction)
 
 
 def compute_hop_trajectory_targets(drift_features, hop_depths):
@@ -89,7 +76,6 @@ def evaluate_at_fraction(model, test_ds, fraction, device):
     probs = np.array(probs)
     ys = np.array(ys)
     preds = (probs > 0.5).astype(float)
-    acc = float.accuracy_score(ys, preds) if hasattr(float, "accuracy_score") else float((preds == ys).mean())
     acc = float((preds == ys).mean())
     result = {"accuracy": acc}
     if len(np.unique(ys)) > 1:
@@ -98,7 +84,8 @@ def evaluate_at_fraction(model, test_ds, fraction, device):
     return result
 
 
-def train_one_seed(seed, train_ds, val_ds, test_ds, epochs=30, lr=1e-3, patience=10):
+def train_one_seed(seed, train_ds, val_ds, test_ds, epochs=30, lr=1e-3, patience=10,
+                   subset="gossipcop", checkpoint_dir=None):
     torch.manual_seed(seed)
     np.random.seed(seed)
 
@@ -126,7 +113,7 @@ def train_one_seed(seed, train_ds, val_ds, test_ds, epochs=30, lr=1e-3, patience
             opt.zero_grad()
 
             total_loss = torch.tensor(0.0, device=DEVICE)
-            for data in batch.to_data_list():
+            for graph_index, data in enumerate(batch.to_data_list()):
                 logits, drift_pred = model(data, return_trajectory=False)
 
                 parent = getattr(data, "parent", None)
@@ -137,7 +124,11 @@ def train_one_seed(seed, train_ds, val_ds, test_ds, epochs=30, lr=1e-3, patience
                     n_children = torch.zeros(data.x.size(0), dtype=torch.long, device=DEVICE)
                 target_drift = compute_drift(data.x, parent, data.hop_depth, n_children)
 
-                cls_loss = bce(logits, labels[data.y.item() if hasattr(data.y, 'item') else 0].unsqueeze(0))
+                # Supervise with *this graph's* label, taken by position in the
+                # batch. Indexing the batch label vector by the label *value*
+                # was wrong: it both mixed supervision between graphs and
+                # could index out of range for a batch of size one.
+                cls_loss = bce(logits, labels[graph_index].unsqueeze(0))
                 drift_loss = mse(drift_pred, target_drift.detach())
 
                 max_hop = data.hop_depth.max().item() + 1
@@ -200,6 +191,35 @@ def train_one_seed(seed, train_ds, val_ds, test_ds, epochs=30, lr=1e-3, patience
 
     model.load_state_dict(best_state)
     model.to(DEVICE)
+
+    if checkpoint_dir:
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        path = os.path.join(checkpoint_dir, f"dtn_{subset}_seed{seed}.pt")
+        save_checkpoint(
+            path,
+            model,
+            "dtn",
+            {
+                "input_dim": 768,
+                "hidden_dim": 128,
+                "num_layers": 2,
+                "dropout": 0.3,
+                "name": "dtn",
+            },
+            {
+                "subset": subset,
+                "epochs": epochs,
+                "lr": lr,
+                "optimizer": "AdamW",
+                "protocol": "train_dtn",
+                "selection_metric": "val_accuracy",
+            },
+            epoch=epochs,
+            best_val_loss=float("nan"),
+            seed=seed,
+        )
+        print(f"    checkpoint saved: {path}", flush=True)
+
     return model
 
 
@@ -210,6 +230,8 @@ def main():
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--out", default="results/dtn_early_detection.json")
     ap.add_argument("--truncations", default="0.1,0.25,0.5,1.0")
+    ap.add_argument("--checkpoint-dir", default="checkpoints",
+                    help="Directory for structured checkpoints consumed by evaluate_dtn.py")
     args = ap.parse_args()
 
     seeds = [int(s) for s in args.seeds.split(",")]
@@ -237,7 +259,8 @@ def main():
 
         print(f"\n=== Seed {seed} ===", flush=True)
         t0 = time.time()
-        model = train_one_seed(seed, train_ds, val_ds, test_ds, epochs=args.epochs)
+        model = train_one_seed(seed, train_ds, val_ds, test_ds, epochs=args.epochs,
+                               subset=args.subset, checkpoint_dir=args.checkpoint_dir)
 
         seed_results = {}
         for frac in truncations:

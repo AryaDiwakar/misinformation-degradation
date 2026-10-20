@@ -1,12 +1,28 @@
 #!/usr/bin/env python3
 """
 Fill the Review 1 PPTX with all project content except student details.
+
+Usage:
+    python3 fill_pptx.py [path/to/deck.pptx] [--output out.pptx]
+
+The deck path defaults to the "Review 1" deck in the repository root.
+
+Note: this deck was written for the *proposal* stage of the project. Its
+"Expected Results" wording predates the results in the paper and is therefore
+optimistic relative to the current (honest) claims. Regenerate the current
+numbers with ``scripts/generate_novelty_pptx.py`` before presenting.
 """
+import argparse
 import copy
+from pathlib import Path
+
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
+
+ROOT = Path(__file__).resolve().parent
+DEFAULT_DECK = ROOT / "Review 1 - 22 07 2026.pptx"
 
 
 def set_text(shape, text, font_size=None, bold=None, color=None):
@@ -85,8 +101,15 @@ def add_content_slide(prs, title_text, content_items, footer_text="SCOPE", slide
 
 
 def main():
-    pptx_path = "/Users/aryadiwakar/misinformation-degradation/Review 1 - 22 07 2026.pptx"
-    prs = Presentation(pptx_path)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("deck", nargs="?", default=str(DEFAULT_DECK))
+    parser.add_argument("--output", default=None, help="Write to a different file")
+    args = parser.parse_args()
+
+    deck = Path(args.deck)
+    if not deck.is_file():
+        raise SystemExit(f"Deck not found: {deck}")
+    prs = Presentation(str(deck))
 
     # =========================================================================
     # SLIDE 1: Fill title (leave student details untouched)
@@ -445,8 +468,8 @@ def main():
     # =========================================================================
     # Save
     # =========================================================================
-    output_path = "/Users/aryadiwakar/misinformation-degradation/Review 1 - 22 07 2026.pptx"
-    prs.save(output_path)
+    output_path = Path(args.output) if args.output else deck
+    prs.save(str(output_path))
     print(f"Saved to {output_path}")
     print(f"Total slides: {len(prs.slides)}")
 

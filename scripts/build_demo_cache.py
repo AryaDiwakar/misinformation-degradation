@@ -105,6 +105,19 @@ def main():
     hop_real_n = np.array([len(real_hop.get(h, [])) for h in hops])
     hop_fake_n = np.array([len(fake_hop.get(h, [])) for h in hops])
 
+    # Hop-standardised ratio: the pooled ratio mixes the content effect with
+    # the classes' different propagation-depth compositions, so the demo
+    # reports both. Reuse the shared implementation so the demo and the
+    # paper can never disagree.
+    from pipeline.drift_stats import build_drift_table, hop_standardized_ratio
+
+    table = build_drift_table(
+        root=args.root, subset=args.subset, split=args.split,
+        feature_type=args.feature_type,
+    )
+    standardized = hop_standardized_ratio(table)
+    standardized_ratio = float(standardized.get("ratio_fake_over_real", float("nan")))
+
     summary_path = out_dir / "drift_summary.npz"
     np.savez_compressed(
         summary_path,
@@ -115,6 +128,9 @@ def main():
         fake_mag_full_mean=np.array([fake_mag.mean()]),
         real_nodes=np.array([real_mag.size]),
         fake_nodes=np.array([fake_mag.size]),
+        n_cascades=np.array([len(dataset)]),
+        pooled_ratio=np.array([float(fake_mag.mean() / real_mag.mean())]),
+        hop_standardized_ratio=np.array([standardized_ratio]),
         hops=np.array(hops),
         hop_real_mean=hop_real_mean,
         hop_fake_mean=hop_fake_mean,
@@ -124,7 +140,8 @@ def main():
     ratio = float(fake_mag.mean() / real_mag.mean())
     print(
         f"Saved {summary_path} | real {real_mag.size:,} nodes "
-        f"fake {fake_mag.size:,} nodes | ratio (fake/real) = {ratio:.4f}",
+        f"fake {fake_mag.size:,} nodes | pooled ratio = {ratio:.4f} | "
+        f"hop-standardised ratio = {standardized_ratio:.4f}",
         flush=True,
     )
 

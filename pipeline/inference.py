@@ -40,7 +40,7 @@ def cascade_from_arrays(arrays: Mapping[str, Any]) -> Data:
     parent = (
         torch.as_tensor(np.asarray(arrays["parent"]), dtype=torch.long)
         if "parent" in arrays
-        else build_parent_index(edge_index, x.size(0))
+        else build_parent_index(edge_index, x.size(0), hop_depth)
     )
     n_children = (
         torch.as_tensor(np.asarray(arrays["n_children"]), dtype=torch.long)

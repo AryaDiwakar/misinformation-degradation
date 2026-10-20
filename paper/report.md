@@ -6,16 +6,19 @@
 
 ## Abstract
 
-> Fake news propagates with approximately 11% less feature drift than real news (p < 1e-70, confirmed on two independent datasets). We introduce *drift* — the per-node feature degradation of content as it propagates through a social network cascade — and show it is (1) a statistically robust, cross-dataset property of misinformation propagation, (2) discriminative in isolation (a drift-only random forest reaches 0.87 AUC on GossipCop with **no text or graph features**), and (3) a useful signal for model design. We propose **HybridDegradLSTM**, which fuses a bidirectional LSTM over cascade order with a drift-aware propagation GNN, achieving state-of-the-art fake news detection (95.85% accuracy / 0.9876 AUC on GossipCop, 3-seed). We additionally report an honest partial-cascade analysis: all models degrade under truncation, per-node drift features do *not* help the classifier, yet the *aggregate* drift signal remains discriminative at 10% cascade size (0.79 AUC). This documents both the promise and the limits of degradation signals for early misinformation detection.
+> Misinformation propagation leaves a measurable trace in how content features change along the propagation tree. We introduce *drift* — the per-node feature degradation of content as it propagates through a social network cascade — and show it is (1) a real but *modest* cross-dataset property of misinformation propagation (fake news drifts ~2% less than real news at matched propagation depth on GossipCop; the effect is not significant at cascade level on PolitiFact), (2) discriminative in isolation (a random forest over 4 content-drift statistics alone reaches 0.846 AUC on GossipCop, without any text encoder or graph learning), and (3) a useful signal for model design. We propose **HybridDegradLSTM**, which fuses a bidirectional LSTM over cascade order with a drift-aware propagation GNN, achieving the best accuracy in our six-model comparison (95.85% accuracy / 0.9876 AUC on GossipCop, 3-seed). We additionally report an honest partial-cascade analysis: all models degrade under truncation, per-node drift features do *not* help the classifier, and aggregate drift statistics weaken sharply at 10% cascade size once root-only cascades are excluded. This documents both the promise and the limits of degradation signals for early misinformation detection.
 
 > ⚠️ **Positioning note (source of truth: [`claims_and_baselines.md`](claims_and_baselines.md)).**
-> The abstract's "state-of-the-art" claim for HybridDegradLSTM is **not yet defensible**:
-> the margin over BaselineLSTM is +0.24pt **not significant** (p = 0.118 at n=5), and
-> published UPFD baselines on the same split report 96.38 (GCNFN) / 97.23 (UPFD) vs our
-> 95.85%. Before submission, rephrase to "best in our six-model comparison and
-> competitive with published UPFD results (within ≈1pt) while fully explainable."
-> The strong, review-proof claims are contribution 1 (drift phenomenon) and 2
-> (drift-only discriminator). See `claims_and_baselines.md` for the locked tables.
+> Two claims were **revised downward** after a confound analysis (§5.2, `results/drift_standardized.json`):
+> (a) The drift effect is **~2%, not ~11%**, once the comparison controls for the classes' different
+> propagation-depth compositions; and (b) the "drift-only" discriminator is partly a **cascade-size**
+> classifier. The revision is documented in §6.4 and reproduced by
+> `scripts/analysis_drift_standardized.py` and `scripts/analysis_discriminator_decomposition.py`.
+> The model claim is also **not** a SOTA claim: the margin over BaselineLSTM is +0.24pt **not
+> significant** (p = 0.118 at n=5), and published UPFD baselines on the same split report
+> 96.38 (GCNFN) / 97.23 (UPFD) vs our 95.85%. We phrase the model result as "best in our
+> six-model comparison and competitive with published UPFD results (within ≈1pt) while fully
+> explainable."
 
 ---
 
@@ -25,10 +28,10 @@ Misinformation spreads through social networks in *propagation cascades*: a root
 
 This work makes the following contributions:
 
-1. **A novel, robust empirical finding.** Fake news propagates with ~11% *less* feature drift than real news. The effect is highly significant on two independent datasets (GossipCop: t=−66.4, p<1e-16; PolitiFact: t=−17.7, p=6e-70) and emerges specifically at deeper propagation depths (hop ≥ 2), while root features are indistinguishable.
-2. **A drift-only discriminator.** Using 12 graph-level drift statistics — no text, no graph embeddings — a random forest reaches **0.873 AUC / 0.795 accuracy** on GossipCop. This closes the loop between the descriptive finding and a usable detection signal.
-3. **A state-of-the-art detector.** **HybridDegradLSTM** fuses a bidirectional LSTM (cascade order) with a drift-aware propagation GNN, reaching **95.85% accuracy / 0.9876 AUC** on GossipCop — the best result among the six models and graph baselines we compare against, verified over 3 seeds.
-4. **An honest partial-cascade analysis.** We re-examine early detection with a fully reproducible protocol. Models degrade sharply under 10% cascade truncation (LSTM: 95.6% → 78.7%). Per-node drift features *hurt* the classifier at both full and partial cascade sizes — but aggregate drift statistics survive truncation (0.79 AUC at 10%). This negative result clarifies where degradation signals help and where they do not.
+1. **A cross-dataset empirical finding, with its confound removed.** Fake news propagates with *less* feature drift than real news. Naively pooling all test nodes gives a large ratio (0.890 on GossipCop, t = −66.4), but that statistic mixes the content effect with a structural one: real cascades are hop-1-heavy and hop-1 nodes carry far more drift than deep nodes. Controlling for propagation depth, the effect is **~2.3% on GossipCop** (hop-standardised ratio 0.977; cascade-level ratio 0.975, p = 0.048) and is **not significant at cascade level on PolitiFact** (ratio 0.969, p = 0.52). We report the confounded and the controlled statistics side by side rather than only the larger one.
+2. **A content-drift-only discriminator.** Using 4 content-drift statistics — no text encoder, no graph learning — a random forest reaches **0.846 AUC** on GossipCop. We also show that the widely quoted "12 aggregate statistics" figure is partly a cascade-*size* classifier (size alone: 0.792 AUC), and state the decomposition explicitly.
+3. **The best detector in our comparison.** **HybridDegradLSTM** fuses a bidirectional LSTM (cascade order) with a drift-aware propagation GNN, reaching **95.85% accuracy / 0.9876 AUC** on GossipCop — the best result among the six models and graph baselines we compare against, verified over 3 seeds. We do not claim it beats published UPFD results.
+4. **An honest partial-cascade analysis.** We re-examine early detection with a fully reproducible protocol. Models degrade sharply under 10% cascade truncation (LSTM: 95.6% → 78.7%). Per-node drift features *hurt* the classifier at both full and partial cascade sizes. Aggregate drift statistics also weaken more than previously reported once the 25.7% of cascades that truncate to a single root node — whose drift is zero by construction — are excluded (0.797 → 0.707 AUC). This negative result clarifies where degradation signals help and where they do not.
 
 ## 2. Background and Related Work
 
@@ -115,7 +118,7 @@ We discovered that an earlier single-run early-detection protocol (a now-lost sc
 | BaselineLSTM | 0.9561 ± 0.0028 | 0.9559 | 0.9858 | 0.9859 |
 | **HybridDegradLSTM** | **0.9585 ± 0.0030** | **0.9584** | **0.9876** | **0.9873** |
 
-HybridDegradLSTM sets the state of the art on GossipCop, outperforming all baselines on every metric. The margin over the strong LSTM baseline is small (+0.24 acc) and **not statistically significant** at n=3 seeds (paired t-test p=0.224), while the margin over DegradGNN is significant (p=0.020, Cohen's d=3.98). See Section 6.2.
+HybridDegradLSTM achieves the best accuracy in our six-model comparison on GossipCop. The margin over the strong LSTM baseline is small (+0.24 acc) and **not statistically significant** at n=3 seeds (paired t-test p=0.224), while the margin over DegradGNN is significant (p=0.020, Cohen's d=3.98). It is *not* a state-of-the-art claim: published UPFD results on the same split reach 96.38 (GCNFN) and 97.23 (UPFD) accuracy. See Section 6.2.
 
 **PolitiFact (3 seeds):** GCN 0.8311±0.0056, GAT 0.7843±0.0587, BiGCN 0.7919±0.0128, LSTM 0.7330±0.1728, DegradGNN 0.4887±0.0000, Hybrid 0.7225±0.1654. With only 62 training graphs, models frequently collapse to the majority class (48.9%). These results are reported for completeness with a heavy caveat; we do not make claims on PolitiFact.
 
@@ -123,42 +126,70 @@ HybridDegradLSTM sets the state of the art on GossipCop, outperforming all basel
 
 ![drift_analysis](../figures/drift_analysis.png)
 
-We computed per-node drift on the entire test sets (nodes, not graphs — ~220k GossipCop nodes, ~31k PolitiFact nodes).
+We computed per-node drift on the entire test sets (nodes, not graphs — ~220k GossipCop nodes, ~31k PolitiFact nodes). Reporting this honestly requires separating two effects that a naive pooled statistic conflates.
+
+**The pooled statistic.** Pooling every non-root node gives:
 
 | Dataset | Real mean | Fake mean | Ratio (fake/real) | Welch t | p-value |
 |:--|--:|--:|--:|--:|--:|
-| GossipCop | 7.18 | 6.39 | **0.890** | −66.4 | < 1e-16 |
-| PolitiFact | 6.05 | 5.35 | **0.885** | −17.7 | 6.05e-70 |
+| GossipCop | 7.28 | 6.56 | 0.901 | −63.6 | < 1e-16 |
+| PolitiFact | 6.10 | 5.39 | 0.883 | −18.2 | 1.1e-73 |
 
-**Interpretation.** Fake news spreads with ~11% less content degradation per hop. The per-depth analysis (Figure 1, middle) shows the effect emerges at hop ≥ 2 and grows with depth; root-node drift is zero by construction (masked) for both classes, ruling out a trivial root-source text effect. This is consistent with the account that fabricated content is amplified by coordinated or templated spreaders who produce homogeneous, low-information reposts, whereas real news accrues heterogeneous commentary. The effect reproduces on two datasets with opposite class-imbalance directions, indicating it is not an artifact of label prevalence.
+**The confound.** The two classes do not have the same propagation-depth composition. Real GossipCop cascades average 75.8 nodes against 39.3 for fake ones, and 80.4% of real nodes sit at hop 1 against 69.0% of fake nodes. Hop-1 nodes carry roughly 2.4× the drift of hop-≥2 nodes (8.14 vs 3.49). The pooled ratio therefore attributes part of a *structural* difference to *content*. The very large t-statistic is further inflated by the node-count imbalance: fake cascades contribute about half as many nodes.
+
+**The controlled statistics.** We therefore report three controls, all in `results/drift_standardized.json`:
+
+| Dataset | Pooled ratio | Hop-standardised ratio | Cascade-level ratio (hop ≥ 2) | t | p |
+|:--|--:|--:|--:|--:|--:|
+| GossipCop | 0.901 | **0.977** | 0.975 | 1.97 | 0.048 |
+| PolitiFact | 0.883 | **0.911** | 0.969 | 0.64 | 0.52 |
+
+*Hop-standardised* re-weights each hop's per-class mean drift by the combined hop distribution before comparing classes. *Cascade-level* takes one number per cascade (its mean drift over nodes at depth ≥ 2) — the unit a detector actually sees — and therefore cannot be inflated by cascades contributing more nodes. A node-level regression with hop fixed effects and cascade-clustered standard errors agrees: the fake-news effect on GossipCop is −0.173 (SE 0.034), i.e. **−2.4%** relative to the real-news mean.
+
+**Interpretation.** The effect is **real but modest**: roughly 2% on GossipCop, larger and not significant at cascade level on PolitiFact. Within a fixed propagation depth the direction is consistent (GossipCop hop-2 ratio 0.896, hop-3 0.929, hop-4 0.838) and survives L2-normalising the BERT embeddings, so it is not an embedding-norm artifact. The per-depth analysis (Figure 1, middle) shows the effect emerging at hop ≥ 2; root-node drift is zero by construction for both classes. This is consistent with the account that fabricated content is amplified by coordinated or templated spreaders who produce homogeneous, low-information reposts, whereas real news accrues heterogeneous commentary.
+
+**Scope of the claim.** We do *not* claim an 11% effect. The pooled ratio remains a valid description of the node population, but it does not support a causal claim about content, because the classes differ systematically in cascade shape. Reviewers should read the hop-standardised and cascade-level numbers as the effect sizes.
 
 ### 5.3 Drift-only discrimination
 
 ![discriminator](../figures/discriminator.png)
 
-Using only the 12 graph-level drift statistics (no text, no neural network), a random forest achieves:
+Using only cascade-level statistics (no text encoder, no neural network), a 200-tree random forest achieves:
 
 | Setting | GossipCop Acc / AUC | PolitiFact Acc / AUC |
 |:--|:--:|:--:|
-| Full cascade | 0.795 / **0.873** | 0.525 / 0.545 |
-| First 10% of cascade | 0.735 / **0.787** | 0.558 / 0.597 |
+| Full cascade | 0.801 / **0.879** | 0.548 / 0.555 |
+| First 10% of cascade | 0.733 / **0.797** | 0.580 / 0.609 |
 
-(5-fold cross-validated means on the test split.) The drift signal alone is strongly discriminative on GossipCop, and — importantly — it **survives partial cascades**: at 10% of the cascade, drift-only still yields 0.787 AUC, comparable to a fully-trained LSTM at 10% truncation (78.7% accuracy). This is the cleanest evidence that degradation statistics carry real misinformation signal.
+(Stratified 5-fold cross-validation on the test split.)
+
+**Decomposition.** The headline "12 aggregate statistics" set is not a pure content-drift set: 4 statistics are content drift (cosine and L2 distance to the parent), 6 are *structural* (depth, child count, rootness) and 2 are pure cascade *size* (`log n_nodes`, max depth). Separating them (`results/drift_discriminator_decomposition.json`):
+
+| Feature set (GossipCop) | Full cascade AUC | 10% truncated AUC |
+|:--|--:|--:|
+| Content drift only (4 feats) | 0.846 | 0.803 |
+| Structural only (6 feats) | 0.853 | 0.796 |
+| Size only (2 feats) | 0.792 | 0.796 |
+| All 12 (previous headline) | 0.879 | 0.797 |
+
+The content-drift signal is real and the strongest single group, but cascade *size alone* already reaches 0.792 AUC — within 3 points of the previous headline — because the classes differ so sharply in cascade length. The correct claim is therefore "content drift adds discriminative information on top of cascade shape", not "discriminates without any graph information".
+
+**Partial cascades.** At 10% truncation the signal weakens more than a naive reading suggests: **25.7% of GossipCop cascades retain only the root node**, whose drift is zero *by construction* rather than by measurement. Restricting to cascades that retain at least one parent-child pair drops the 12-feature AUC from 0.797 to **0.707**, and content-only from 0.803 to 0.718. The aggregate drift signal is thus weaker at 10% than the headline figure suggests.
 
 ### 5.4 Ablation study
 
 ![ablation](../figures/ablation.png)
 
-We ablate components of the DegradGNN (prior single-run protocol, 100% data):
+We ablate components of the DegradGNN (single-run protocol, 100% data; reproduced by `scripts/run_ablation_100pct.py`):
 
 | Variant | Accuracy | AUC |
 |:--|--:|--:|
-| Full (drift + hop + tree) | 0.9127 | 0.9688 |
-| w/o drift | 0.9245 | 0.9743 |
-| w/o hop | 0.9221 | 0.9737 |
-| w/o drift + hop | 0.9334 | 0.9784 |
-| w/o tree (MLP over mean) | 0.9540 | 0.9797 |
-| BERT-MLP (text only) | 0.9232 | 0.9704 |
+| Full (drift + hop + tree) | 0.9247 | 0.9705 |
+| w/o drift | 0.9378 | 0.9829 |
+| w/o hop | 0.9326 | 0.9787 |
+| w/o drift + hop | 0.9365 | 0.9796 |
+| w/o tree (MLP over mean) | 0.9634 | 0.9866 |
+| BERT-MLP (text only) | 0.9302 | 0.9751 |
 
 **Finding.** Removing drift and hop features *improves* the model. The tree message passing itself helps (w/o tree drops to an MLP), but the auxiliary drift/hop features do not. A fresh 3-variant re-run under partial cascades confirms the same ranking at 10% truncation:
 
@@ -168,9 +199,9 @@ We ablate components of the DegradGNN (prior single-run protocol, 100% data):
 | w/o drift | 0.9365 | **0.8521** |
 | w/o hop | 0.9354 | 0.8220 |
 
-*The 100%-data ablations are single-run and the 10%-truncation re-run is single-seed (seed 1); the ranking (drift/hop removal improves accuracy) is consistent across both runs and both cascade sizes, but per-seed variance on MPS means the exact gaps should be read with caution.*
+*The ablations are single-run and the 10%-truncation re-run is single-seed (seed 1); the ranking (drift/hop removal improves accuracy) is consistent across both runs and both cascade sizes, but per-seed variance on MPS means the exact gaps should be read with caution. The earlier 100%-cascade numbers in the literature draft came from an artifact with no producing script; the table above is regenerated by `scripts/run_ablation_100pct.py` and is therefore reproducible.*
 
-The honest conclusion: **per-node drift features are discriminative only in the aggregate; when injected into the classifier they hurt at every cascade size.** This is a meaningful negative result that reconciles the strong drift-only discriminator (Section 5.3) with the model-level ablation: the useful information is the *distribution* of drift, not its per-node instantiation.
+The honest conclusion: **per-node drift features are discriminative only in the aggregate; when injected into the classifier they hurt at every cascade size.** This is a meaningful negative result that reconciles the drift-only discriminator (Section 5.3) with the model-level ablation: the useful information is the *distribution* of drift, not its per-node instantiation.
 
 ### 5.5 Partial-cascade (early detection) analysis
 
@@ -186,7 +217,7 @@ We evaluate models trained on full cascades against truncated test cascades (kee
 | DegradGNN | **0.814** ± 0.025 | 0.912 ± 0.009 | 0.934 ± 0.002 | 0.930 ± 0.004 |
 | HybridDegradLSTM | 0.808 ± 0.017 | 0.914 ± 0.020 | 0.942 ± 0.010 | 0.953 ± 0.005 |
 
-All models degrade substantially when only 10% of the cascade is available (from ~95% to ~79–81%). Interestingly, the graph models (DegradGNN 81.4%, Hybrid 80.8%) are modestly *more* robust to 10% truncation than the pure LSTM (78.7%) — a +2.5 point mean gap — though the per-seed variance overlaps, so this is not statistically significant at n=3. Consistent with the ablation, per-node drift features do not confer truncation robustness. The aggregate drift-only discriminator, in contrast, degrades more gracefully in *relative* terms (0.873 → 0.787 AUC), suggesting that graph-level degradation statistics — not per-node features — are the right vector for early detection.
+All models degrade substantially when only 10% of the cascade is available (from ~95% to ~79–81%). Interestingly, the graph models (DegradGNN 81.4%, Hybrid 80.8%) are modestly *more* robust to 10% truncation than the pure LSTM (78.7%) — a +2.5 point mean gap — though the per-seed variance overlaps, so this is not statistically significant at n=3. Consistent with the ablation, per-node drift features do not confer truncation robustness. The aggregate drift-only discriminator degrades in relative terms (0.879 → 0.797 AUC), but Section 5.3 shows this still overstates the case: 25.7% of truncated cascades retain only the root, and excluding them drops the signal to 0.707 AUC. Graph-level degradation statistics remain the more promising vector for early detection, but the margin over cascade size alone (0.796 AUC at 10%) is narrow.
 
 ## 6. Discussion
 
@@ -194,20 +225,32 @@ All models degrade substantially when only 10% of the cascade is available (from
 
 With 62 training graphs, deep models on PolitiFact frequently collapse to the majority class (48.9%), and LSTM/Hybrid show ±17% variance across seeds. We therefore treat PolitiFact exclusively as **evidence for the drift phenomenon** (its 31k test nodes), not for model comparisons. This limits our model claims to GossipCop; cross-dataset model generalization remains future work (Twitter15/16 are not publicly hydratable for this feature set).
 
-### 6.2 Statistical honesty
+### 6.2 What we corrected, and why
 
-- **Drift phenomenon:** robust, n in the tens-of-thousands, p < 1e-70 on both datasets. This is our strongest claim.
+Two of our own earlier numbers did not survive a confound analysis, and we report the corrected versions rather than the originals.
+
+**The pooled drift ratio.** Our earlier draft led with "fake news drifts ~11% less, p < 1e-70". That statistic pools every non-root node across the test set. It is a correct description of the node population, but it is *not* an estimate of a content effect, because the classes have systematically different propagation-depth compositions (§5.2). Once the comparison is made at matched depth, the effect is **~2.3% on GossipCop** and **not significant at cascade level on PolitiFact**. The mechanism we hypothesised — coordinated spreaders producing homogeneous reposts — remains consistent with the controlled numbers, but it is a much weaker claim than "11%".
+
+**The "drift-only" discriminator.** Our earlier draft claimed 0.873 AUC "with no text or graph features". The 12 statistics include 6 structural features and 2 cascade-size features, and cascade size alone reaches 0.792 AUC. Content drift alone reaches 0.846 AUC, which still supports a meaningful claim — but the claim must be stated as "content drift without a text encoder", not "without any graph information".
+
+Both corrections point the same way: **the drift phenomenon is real but smaller than our first estimate, and the discriminator's power is partly explained by cascade shape rather than content degradation.** We think this is the honest description, and it is reproducible via `scripts/analysis_drift_standardized.py` and `scripts/analysis_discriminator_decomposition.py`.
+
+### 6.4 Statistical honesty
+
+- **Drift phenomenon:** the direction is consistent across both datasets and survives depth-standardisation and cascade-level aggregation, but the effect size is ~2% on GossipCop and not significant at cascade level on PolitiFact. This is our lead claim, stated at its defensible size.
 - **Hybrid vs. LSTM:** +0.24% accuracy and +0.19% AUC on average, but p = 0.224 / 0.452 at n=3 seeds. The improvement is consistent in direction (2/3 seeds positive in AUC) but we do **not** claim it is significant.
 - **Hybrid vs. DegradGNN:** p = 0.020, Cohen's d = 3.98 — the LSTM branch provides a significant gain over the GNN-only model.
 - We report mean ± std over seeds and exact per-seed values in the Appendix, and note that MPS training is not bit-reproducible even at a fixed seed.
 
-### 6.3 Why per-node drift hurts but aggregate drift helps
+### 6.5 Why per-node drift hurts but aggregate drift helps
 
-We hypothesize two mechanisms. (1) **Normalization shift:** drift features are normalized per-graph by current maxima; at truncation the depth/children terms shift distribution, systematically misaligning the classifier's input. (2) **Signal-to-noise:** per-node drift is dominated by idiosyncratic variation; only the aggregate moments (mean, std) separate the classes. This suggests future models should consume graph-level drift statistics (e.g., via set-pooling) rather than concatenating per-node drift.
+We hypothesize two mechanisms. (1) **Normalization shift:** drift features are normalized per-graph by current maxima; at truncation the depth/children terms shift distribution, systematically misaligning the classifier's input. (2) **Signal-to-noise:** per-node drift is dominated by idiosyncratic variation; only the aggregate moments (mean, std) separate the classes. This suggests future models should consume graph-level drift statistics (e.g., via set-pooling) rather than concatenating per-node drift. The DriftPool model (graph-level drift set-pooling) is the concrete instantiation of this design rule and is the numerically best model in our comparison (0.9601 accuracy, 3 seeds), significantly ahead of DegradGNN (p = 0.0009, d = 18.9).
 
 ## 7. Conclusion
 
-We demonstrated that misinformation propagation leaves a measurable, statistically robust signature: **fake news drifts ~11% less than real news** (p < 1e-70, two datasets). This signal is discriminative without any text or graph features (0.873 AUC) and partially survives partial cascades (0.787 AUC at 10%). We further showed that injecting per-node drift into a classifier does not help — a negative result with design implications — and that a hybrid sequence-graph detector (HybridDegradLSTM) achieves the best accuracy in our comparisons (95.85%) on GossipCop, with a small but consistent edge over a strong LSTM baseline and a significant edge over a GNN-only model. Our honest partial-cascade analysis reveals a real robustness gap in current detectors and points to aggregate degradation statistics as the promising direction for early misinformation detection.
+We demonstrated that misinformation propagation leaves a measurable signature in how content features change along the tree: **fake news drifts less than real news at matched propagation depth** — about 2% on GossipCop (hop-standardised ratio 0.977, cascade-level p = 0.048), with the direction reproduced on PolitiFact though not significant at cascade level there. Content drift alone, without any text encoder or graph learning, is discriminative (0.846 AUC), though cascade size is a strong competing explanation (0.792 AUC) and must be controlled for before the effect is attributed to content. We further showed that injecting per-node drift into a classifier does not help — a negative result with design implications — and that a hybrid sequence-graph detector (HybridDegradLSTM) achieves the best accuracy in our comparisons (95.85%) on GossipCop, with a small but consistent edge over a strong LSTM baseline and a significant edge over a GNN-only model. Our honest partial-cascade analysis reveals a real robustness gap in current detectors and points to aggregate degradation statistics — read at the graph level, and with cascade shape controlled for — as the promising direction for early misinformation detection.
+
+**A note on self-correction.** An earlier version of this manuscript reported an ~11% drift effect with p < 1e-70 and described the discriminator as using "no text or graph features". Both statements came from statistics that confounded the content effect with the classes' different cascade shapes. We report the corrected, smaller effect sizes here and release the analysis scripts that produce them, because a result that only survives a specific aggregation choice is not a result a reader can build on.
 
 ## References
 
@@ -233,11 +276,16 @@ We demonstrated that misinformation propagation leaves a measurable, statistical
 ## Appendix B. Reproducibility index
 
 - `results/multiseed_all.json` — 3-seed main results (both datasets).
+- `results/multiseed_driftpool.json` — 3-seed DriftPool results.
 - `results/significance.json` — paired t-tests, Cohen's d, drift-ratio statistics.
-- `results/drift_discriminator_robustness.json` — drift-only RF, full vs 10%, 5-fold.
+- `results/significance_5seed.json` — n=3 / n=5 paired statistics.
+- `results/drift_standardized.json` — hop-standardised, cascade-level and regression statistics for the drift phenomenon (§5.2).
+- `results/drift_discriminator_robustness.json` — drift-only RF, full vs 10%, stratified 5-fold.
+- `results/drift_discriminator_decomposition.json` — content vs structural vs size decomposition of the discriminator (§5.3).
 - `results/ablations.json`, `results/ablations_10pct.json` — ablations at 100% and 10%.
 - `results/early_detection_multiseed.json` — multi-seed truncation curves.
-- `scripts/make_figures.py`, `scripts/analysis_stats.py`, `scripts/run_ablation_10pct.py`, `scripts/run_early_detection.py`, `scripts/run_discriminator_robustness.py` — all reproducible.
+- `scripts/analysis_drift_standardized.py`, `scripts/analysis_discriminator_decomposition.py` — the confound analyses.
+- `scripts/make_figures.py`, `scripts/analysis_stats.py`, `scripts/run_ablation_100pct.py`, `scripts/run_ablation_10pct.py`, `scripts/run_early_detection.py`, `scripts/run_discriminator_robustness.py` — all reproducible.
 - `figures/` — all figures embedded above.
 
 *All experiments: Apple Silicon (MPS), PyTorch, PyG. One seed per process.*
