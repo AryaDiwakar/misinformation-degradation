@@ -23,6 +23,8 @@ Results below are reported from the current saved experiments. GossipCop is the 
 | Drift difference, GossipCop | Fake-news nodes drift less than real-news nodes. Pooled node-level ratio 0.901; **hop-standardised ratio 0.977** (-2.3% at matched depth); cascade-level ratio 0.975, p = 0.048 |
 | Drift difference, PolitiFact | Pooled ratio 0.883; hop-standardised ratio 0.911; cascade-level ratio 0.969, **p = 0.52** (not significant) |
 | Content-drift-only discriminator | **0.846 AUC** on GossipCop using 4 content-drift statistics (no text encoder, no graph learning) |
+| Incremental value over cascade shape | Content drift beats cascade size alone by **+0.054 AUC** (paired bootstrap, p < 0.0001); beats structure at matched size by +0.015 (p = 0.004) |
+| Verified mechanism | Fake cascades have far more near-duplicate *sibling* reposts (98.3% vs 92.7% @ cosine 0.95, p = 1e-287); near-duplication predicts drift (r = −0.31, p = 2e-85) within class and size-controlled |
 | Full 12-statistic discriminator | 0.801 accuracy / 0.879 AUC on GossipCop; cascade *size* alone reaches 0.792 AUC |
 | Drift-only at 10% cascade size | 0.733 accuracy / 0.797 AUC on GossipCop; **0.707 AUC** once the 25.7% of root-only cascades are excluded |
 | HybridDegradLSTM | 0.9585 accuracy / 0.9876 AUC on GossipCop, 3-seed mean |
@@ -96,6 +98,9 @@ python3 scripts/analysis_incremental_value.py gossipcop
 
 # Probe the mechanism (homogeneous / near-duplicate reposts)
 python3 scripts/analysis_mechanism_probe.py gossipcop
+
+# Link the mechanism to the effect (does copying explain the drift?)
+python3 scripts/analysis_mechanism_linkage.py gossipcop
 
 # Three-seed early-detection evaluation
 python3 scripts/run_early_detection.py --seeds 1,2,3
