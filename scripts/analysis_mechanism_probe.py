@@ -38,27 +38,41 @@ def cascade_homogeneity(graph):
     # Normalise so similarity is not driven by embedding norm.
     xn = x / x.norm(dim=1, keepdim=True).clamp(min=1e-8)
 
-    # Siblings: nodes sharing a parent. Build every sibling pair once, as
-    # index tensors, so the similarity computation is vectorised.
+    # Siblings: nodes sharing a parent. Group the children by parent with a
+    # single sort, then generate each group's pairs vectorised — looping over
+    # every parent separately costs O(n^2) torch dispatches per cascade.
     parent = graph.parent
+    valid = parent >= 0
+    child_idx = valid.nonzero(as_tuple=True)[0]
+    child_parent = parent[valid]
+    order = torch.argsort(child_parent, stable=True)
+    child_idx = child_idx[order]
+    child_parent = child_parent[order]
+
+    unique_parents, counts = torch.unique_consecutive(
+        child_parent, return_counts=True
+    )
+    starts = torch.cat(
+        [torch.zeros(1, dtype=torch.long), counts.cumsum(0)[:-1]]
+    )
+
     pair_i, pair_j = [], []
     group_sizes = []
-    for p in parent.tolist():
-        if p < 0:
+    for gi in range(int(unique_parents.numel())):
+        k = int(counts[gi])
+        if k < 2:
             continue
-        children = (parent == p).nonzero(as_tuple=True)[0].tolist()
-        if len(children) < 2:
-            continue
-        group_sizes.append(len(children))
-        for a in range(len(children)):
-            for b in range(a + 1, len(children)):
-                pair_i.append(children[a])
-                pair_j.append(children[b])
+        start = int(starts[gi])
+        group = child_idx[start : start + k]
+        tri = torch.triu_indices(k, k, offset=1)
+        pair_i.append(group[tri[0]])
+        pair_j.append(group[tri[1]])
+        group_sizes.append(k)
 
     duplicate_rates = {t: float("nan") for t in DUPLICATE_THRESHOLDS}
     if pair_i:
-        pi = torch.tensor(pair_i, dtype=torch.long)
-        pj = torch.tensor(pair_j, dtype=torch.long)
+        pi = torch.cat(pair_i)
+        pj = torch.cat(pair_j)
         pair_cos = (xn[pi] * xn[pj]).sum(dim=1)
         # Group id per pair, so each sibling group's duplicate rate can be
         # averaged and then averaged over groups.
@@ -71,17 +85,20 @@ def cascade_homogeneity(graph):
         for threshold in DUPLICATE_THRESHOLDS:
             is_dup = (pair_cos >= threshold).float()
             totals = torch.zeros(len(group_sizes)).index_add_(0, group_id, is_dup)
-            counts = torch.zeros(len(group_sizes)).index_add_(
+            counts_per_group = torch.zeros(len(group_sizes)).index_add_(
                 0, group_id, torch.ones_like(is_dup)
             )
-            rates = totals / counts.clamp(min=1)
+            rates = totals / counts_per_group.clamp(min=1)
             duplicate_rates[threshold] = float(rates.mean())
 
     # Within-cascade dispersion: mean pairwise cosine distance across all
     # node pairs (a cascade-level "how varied is this conversation" measure).
-    sim = xn @ xn.T
-    iu = torch.triu_indices(n, n, offset=1)
-    mean_pairwise_cos = float(sim[iu[0], iu[1]].mean()) if n > 1 else float("nan")
+    if n > 1:
+        sim = xn @ xn.T
+        iu = torch.triu_indices(n, n, offset=1)
+        mean_pairwise_cos = float(sim[iu[0], iu[1]].mean())
+    else:
+        mean_pairwise_cos = float("nan")
 
     return {
         "n_sibling_groups": len(group_sizes),
@@ -98,8 +115,11 @@ def main():
     )
 
     per_class = {0: [], 1: []}
-    for graph in ds:
+    total = len(ds)
+    for index, graph in enumerate(ds):
         per_class[int(graph.y.item())].append(cascade_homogeneity(graph))
+        if (index + 1) % 500 == 0:
+            print(f"  processed {index + 1}/{total}", flush=True)
 
     out = {"subset": subset, "n_cascades": {}}
     print(f"== {subset} ==")

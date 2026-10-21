@@ -6,13 +6,13 @@
 
 ## Abstract
 
-> Misinformation propagation leaves a measurable trace in how content features change along the propagation tree. We introduce *drift* — the per-node feature degradation of content as it propagates through a social network cascade — and show it is (1) a real but *modest* cross-dataset property of misinformation propagation (fake news drifts ~2% less than real news at matched propagation depth on GossipCop; the effect is not significant at cascade level on PolitiFact), (2) discriminative in isolation (a random forest over 4 content-drift statistics alone reaches 0.846 AUC on GossipCop, without any text encoder or graph learning), and (3) a useful signal for model design. We propose **HybridDegradLSTM**, which fuses a bidirectional LSTM over cascade order with a drift-aware propagation GNN, achieving the best accuracy in our six-model comparison (95.85% accuracy / 0.9876 AUC on GossipCop, 3-seed). We additionally report an honest partial-cascade analysis: all models degrade under truncation, per-node drift features do *not* help the classifier, and aggregate drift statistics weaken sharply at 10% cascade size once root-only cascades are excluded. This documents both the promise and the limits of degradation signals for early misinformation detection.
+> Misinformation propagation leaves a measurable trace in how content features change along the propagation tree. We introduce *drift* — the per-node feature degradation of content as it propagates through a social-network cascade — and show that (1) fake news drifts less than real news **at matched propagation depth** (~2.3% on GossipCop; hop-standardised ratio 0.977, cascade-level p = 0.048; not significant at cascade level on PolitiFact), (2) this signal is **not** a proxy for cascade shape: content drift beats cascade size alone by **+0.054 AUC** (paired bootstrap, p < 0.0001) and beats structure at matched size, and (3) it has a **verified mechanism** — fake-news cascades contain markedly more near-duplicate *sibling* reposts (98.3% vs 92.7% of sibling pairs above cosine 0.95, p = 1e-287), and near-duplication is strongly negatively correlated with drift (r = −0.31, p = 2e-85) within each class and after controlling for cascade size. Coordinated copying produces homogeneous subtrees, and homogeneous subtrees drift less. We further report an honest partial-cascade analysis: all models degrade under truncation, per-node drift features do *not* help the classifier, and aggregate drift statistics weaken sharply at 10% cascade size once root-only cascades are excluded. The contribution is a measurement, a mechanism and a design rule, not a new state-of-the-art detector.
 
 > ⚠️ **Positioning note (source of truth: [`claims_and_baselines.md`](claims_and_baselines.md)).**
 > Two claims were **revised downward** after a confound analysis (§5.2, `results/drift_standardized.json`):
 > (a) The drift effect is **~2%, not ~11%**, once the comparison controls for the classes' different
 > propagation-depth compositions; and (b) the "drift-only" discriminator is partly a **cascade-size**
-> classifier. The revision is documented in §6.4 and reproduced by
+> classifier. The revision is documented in §6.2 and reproduced by
 > `scripts/analysis_drift_standardized.py` and `scripts/analysis_discriminator_decomposition.py`.
 > The model claim is also **not** a SOTA claim: the margin over BaselineLSTM is +0.24pt **not
 > significant** (p = 0.118 at n=5), and published UPFD baselines on the same split report
@@ -28,10 +28,11 @@ Misinformation spreads through social networks in *propagation cascades*: a root
 
 This work makes the following contributions:
 
-1. **A cross-dataset empirical finding, with its confound removed.** Fake news propagates with *less* feature drift than real news. Naively pooling all test nodes gives a large ratio (0.890 on GossipCop, t = −66.4), but that statistic mixes the content effect with a structural one: real cascades are hop-1-heavy and hop-1 nodes carry far more drift than deep nodes. Controlling for propagation depth, the effect is **~2.3% on GossipCop** (hop-standardised ratio 0.977; cascade-level ratio 0.975, p = 0.048) and is **not significant at cascade level on PolitiFact** (ratio 0.969, p = 0.52). We report the confounded and the controlled statistics side by side rather than only the larger one.
-2. **A content-drift-only discriminator.** Using 4 content-drift statistics — no text encoder, no graph learning — a random forest reaches **0.846 AUC** on GossipCop. We also show that the widely quoted "12 aggregate statistics" figure is partly a cascade-*size* classifier (size alone: 0.792 AUC), and state the decomposition explicitly.
-3. **The best detector in our comparison.** **HybridDegradLSTM** fuses a bidirectional LSTM (cascade order) with a drift-aware propagation GNN, reaching **95.85% accuracy / 0.9876 AUC** on GossipCop — the best result among the six models and graph baselines we compare against, verified over 3 seeds. We do not claim it beats published UPFD results.
-4. **An honest partial-cascade analysis.** We re-examine early detection with a fully reproducible protocol. Models degrade sharply under 10% cascade truncation (LSTM: 95.6% → 78.7%). Per-node drift features *hurt* the classifier at both full and partial cascade sizes. Aggregate drift statistics also weaken more than previously reported once the 25.7% of cascades that truncate to a single root node — whose drift is zero by construction — are excluded (0.797 → 0.707 AUC). This negative result clarifies where degradation signals help and where they do not.
+1. **A cross-dataset empirical finding, with its confound removed.** Fake news propagates with *less* feature drift than real news. Naively pooling all test nodes gives a large ratio (0.901 on GossipCop, t = −63.6), but that statistic mixes the content effect with a structural one: real cascades are hop-1-heavy and hop-1 nodes carry far more drift than deep nodes. Controlling for propagation depth, the effect is **~2.3% on GossipCop** (hop-standardised ratio 0.977; cascade-level ratio 0.975, p = 0.048) and is **not significant at cascade level on PolitiFact** (ratio 0.969, p = 0.52). We report the confounded and the controlled statistics side by side rather than only the larger one.
+2. **Evidence that the signal is not a proxy for cascade shape.** Cascade size alone reaches 0.792 AUC on GossipCop, so we test what drift adds: content drift beats size alone by **+0.054 AUC** (paired bootstrap over identical folds, p < 0.0001), beats structure at matched size (+0.015, p = 0.004), and adds more than structure does when combined with size. The information is about the *content* relationship between a node and its parent, not the tree's geometry.
+3. **A verified mechanism.** We measure the **sibling near-duplicate rate** — the fraction of nodes sharing a parent whose content is near-identical — and find fake-news cascades contain far more of it (98.3% vs 92.7% of sibling pairs above cosine 0.95, p = 1e-287) while *overall* within-cascade dispersion does not differ. Near-duplication is strongly negatively correlated with drift (r = −0.31, p = 2e-85), within each class and after controlling for cascade size, and discriminates on its own at 0.831 AUC. The effect therefore has a mechanism — coordinated copying creates homogeneous subtrees, and homogeneous subtrees drift less — not just a statistical association.
+4. **A design rule, from an honest negative result.** Per-node drift features *hurt* the classifier at every cascade size, while graph-level drift statistics help. This reconciles the discriminator result with the ablation and yields a concrete rule: consume drift via set-pooling, not concatenation.
+5. **The best detector in our comparison, and what it is worth.** **HybridDegradLSTM** reaches **95.85% accuracy / 0.9876 AUC** on GossipCop — the best of the six models we compare against, verified over 3 seeds. We do not claim it beats published UPFD results, and its margin over a strong LSTM baseline is not statistically significant. We report it as an engineering artifact illustrating the design rule, not as the paper's headline.
 
 ## 2. Background and Related Work
 
@@ -193,7 +194,34 @@ Three results matter here. First, **content drift significantly beats cascade si
 
 This is the strongest form the central claim can take, and it is the one we recommend leading with: **degradation features are not merely a proxy for cascade shape; they carry independent information about how content changes along a propagation tree.**
 
-### 5.5 Ablation study
+### 5.5 What explains the effect? Direct evidence for a copying mechanism
+
+The natural explanation for lower drift in fake cascades is **coordination**: a templated campaign pushes near-identical reposts, so a child's content barely changes from its parent's. Real news accrues heterogeneous commentary, so parent→child distances are larger. This was a narrative in earlier drafts; we test it directly.
+
+For each cascade we measure the **sibling near-duplicate rate**: the fraction of sibling pairs (nodes sharing a parent) whose L2-normalised BERT embeddings have cosine similarity above a threshold. Siblings are exactly the nodes a coordinator would push the same content to.
+
+| Sibling near-duplicate rate | Real | Fake | Mann-Whitney p |
+|:--|--:|--:|:--|
+| cosine ≥ 0.90 | 0.9915 | 0.9984 | 7e-74 |
+| cosine ≥ 0.95 | 0.9266 | **0.9825** | 9.7e-288 |
+| cosine ≥ 0.98 | 0.8220 | **0.8795** | 2.6e-74 |
+
+Fake-news cascades contain substantially more near-duplicate sibling reposts. Notably, the *overall* within-cascade embedding dispersion does **not** differ (real 0.9826 vs fake 0.9823, p = 0.32) — the difference is specific to the sibling structure, which is exactly what the coordination hypothesis predicts and what a generic "fake content is more similar" story would not.
+
+**Linking mechanism to effect.** If copying is what lowers drift, then cascades with more copying should drift less, regardless of class:
+
+| Relationship | r | p |
+|:--|--:|--:|
+| near-duplication ↔ drift (all cascades) | **−0.310** | 2e-85 |
+| within real cascades only | −0.320 | 1.3e-46 |
+| within fake cascades only | −0.153 | 1.9e-11 |
+| partial correlation, controlling for log(cascade size) | −0.312 | 1.2e-86 |
+
+The relationship holds *within* each class, so it is not a composition artifact, and it is essentially unchanged after controlling for cascade size. Near-duplication alone discriminates fake from real at **0.831 AUC**.
+
+This gives the paper a mechanism rather than a correlation: **coordinated copying → near-duplicate siblings → smaller parent→child content change → the observed lower drift.** It also explains why the effect is modest in magnitude (2%) rather than large — it is one channel among several that shape parent→child distance — and why it concentrates in larger cascades, where there are enough siblings for copying to dominate.
+
+### 5.6 Ablation study
 
 ![ablation](../figures/ablation.png)
 
@@ -220,7 +248,7 @@ We ablate components of the DegradGNN (single-run protocol, 100% data; reproduce
 
 The honest conclusion: **per-node drift features are discriminative only in the aggregate; when injected into the classifier they hurt at every cascade size.** This is a meaningful negative result that reconciles the drift-only discriminator (Section 5.3) and the incremental-value analysis (Section 5.4) with the model-level ablation: the useful information is the *distribution* of drift, not its per-node instantiation.
 
-### 5.6 Partial-cascade (early detection) analysis
+### 5.7 Partial-cascade (early detection) analysis
 
 ![early_detection](../figures/early_detection.png)
 
@@ -300,10 +328,12 @@ We demonstrated that misinformation propagation leaves a measurable signature in
 - `results/drift_discriminator_robustness.json` — drift-only RF, full vs 10%, stratified 5-fold.
 - `results/drift_discriminator_decomposition.json` — content vs structural vs size decomposition of the discriminator (§5.3).
 - `results/incremental_value_gossipcop.json` — paired-bootstrap test of whether content drift adds information beyond cascade shape (§5.4).
+- `results/mechanism_probe_gossipcop.json`, `results/mechanism_linkage_gossipcop.json` — sibling near-duplication rates and their link to drift (§5.5).
 - `results/ablations.json`, `results/ablations_10pct.json` — ablations at 100% and 10%.
 - `results/early_detection_multiseed.json` — multi-seed truncation curves.
 - `scripts/analysis_drift_standardized.py`, `scripts/analysis_discriminator_decomposition.py` — the confound analyses.
 - `scripts/analysis_incremental_value.py` — the paired-bootstrap incremental-value test.
+- `scripts/analysis_mechanism_probe.py`, `scripts/analysis_mechanism_linkage.py` — the copying-mechanism analysis.
 - `scripts/make_figures.py`, `scripts/analysis_stats.py`, `scripts/run_ablation_100pct.py`, `scripts/run_ablation_10pct.py`, `scripts/run_early_detection.py`, `scripts/run_discriminator_robustness.py` — all reproducible.
 - `figures/` — all figures embedded above.
 

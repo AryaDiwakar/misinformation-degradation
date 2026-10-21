@@ -38,20 +38,26 @@
 
 % ==================================================================
 \begin{abstract}
-Fake news propagates with approximately 11\% less feature drift than real news
-($p < 10^{-70}$, confirmed on two independent datasets). We introduce
-\emph{drift}---the per-node feature degradation of content as it propagates
-through a social-network cascade---and show that it is (i) a statistically
-robust, cross-dataset property of misinformation propagation, (ii)
-discriminative in isolation (a drift-only random forest reaches 0.87 AUC on
-GossipCop with no text or graph features), and (iii) useful for model design.
-We propose \textbf{HybridDegradLSTM}, which fuses a bidirectional LSTM over
-cascade order with a drift-aware propagation GNN, achieving 95.85\% accuracy /
-0.9876 AUC on GossipCop (3-seed mean). We further report an honest
+Misinformation propagation leaves a measurable trace in how content features
+change along the propagation tree. We introduce \emph{drift}---the per-node
+feature degradation of content as it propagates through a social-network
+cascade---and show that (i) fake news drifts less than real news \textbf{at
+matched propagation depth} ($\sim$2.3\% on GossipCop; hop-standardised ratio
+0.977, cascade-level $p=0.048$; not significant at cascade level on
+PolitiFact), (ii) this signal is \textbf{not} a proxy for cascade shape:
+content drift beats cascade size alone by \textbf{$+0.054$ AUC} (paired
+bootstrap, $p<10^{-4}$) and beats structure at matched size, and (iii) it has a
+\textbf{verified mechanism}---fake-news cascades contain markedly more
+near-duplicate \emph{sibling} reposts (98.3\% vs.\ 92.7\% of sibling pairs
+above cosine 0.95, $p=10^{-287}$), and near-duplication is strongly negatively
+correlated with drift ($r=-0.31$, $p=2\times10^{-85}$) within each class and
+after controlling for cascade size. Coordinated copying produces homogeneous
+subtrees, and homogeneous subtrees drift less. We further report an honest
 partial-cascade analysis: all models degrade under truncation, per-node drift
-features do \emph{not} help the classifier, yet \emph{aggregate} drift remains
-discriminative at 10\% cascade size (0.79 AUC). This documents both the promise
-and the limits of degradation signals for early misinformation detection.
+features do \emph{not} help the classifier, and aggregate drift statistics
+weaken sharply at 10\% cascade size once root-only cascades are excluded. The
+contribution is a measurement, a mechanism and a design rule, not a new
+state-of-the-art detector.
 \end{abstract}
 
 % ==================================================================
@@ -79,23 +85,35 @@ for propagation depth, the effect is \textbf{$\sim$2.3\% on GossipCop}
 (hop-standardised ratio 0.977; cascade-level ratio 0.975, $p=0.048$) and
 \textbf{not significant at cascade level on PolitiFact} (ratio 0.969,
 $p=0.52$). We report the confounded and the controlled statistics side by side.
-\item \textbf{A content-drift-only discriminator.} Using 4 content-drift
-statistics---no text encoder, no graph learning---a random forest reaches
-\textbf{0.846 AUC} on GossipCop. We also show that the widely quoted ``12
-aggregate statistics'' figure is partly a cascade-\emph{size} classifier (size
-alone: 0.792 AUC), and state the decomposition explicitly.
-\item \textbf{A best-in-comparison detector.} \textbf{HybridDegradLSTM} fuses a
-bidirectional LSTM (cascade order) with a drift-aware propagation GNN, reaching
-\textbf{95.85\% accuracy / 0.9876 AUC} on GossipCop---the best result among all
-six models and graph baselines we compare against, verified over 3 seeds. We do
-not claim it beats published UPFD results.
-\item \textbf{An honest partial-cascade analysis.} We re-examine early detection
-with a fully reproducible protocol. Models degrade sharply under 10\% cascade
-truncation (LSTM: 95.6\% $\rightarrow$ 78.7\%). Per-node drift features
-\emph{hurt} the classifier at both full and partial cascade sizes. Aggregate
-drift statistics also weaken more than previously reported once the 25.7\% of
-cascades that truncate to a single root node---whose drift is zero by
-construction---are excluded (0.797 $\rightarrow$ 0.707 AUC). This negative
+\item \textbf{Evidence that the signal is not a proxy for cascade shape.}
+Cascade size alone reaches 0.792 AUC on GossipCop, so we test what drift adds:
+content drift beats size alone by \textbf{$+0.054$ AUC} (paired bootstrap over
+identical folds, $p<10^{-4}$), beats structure at matched size ($+0.015$,
+$p=0.004$), and adds more than structure does when combined with size. The
+information is about the \emph{content} relationship between a node and its
+parent, not the tree's geometry.
+\item \textbf{A verified mechanism.} We measure the \textbf{sibling
+near-duplicate rate}---the fraction of nodes sharing a parent whose content is
+near-identical---and find fake-news cascades contain far more of it (98.3\%
+vs.\ 92.7\% of sibling pairs above cosine 0.95, $p=10^{-287}$) while
+\emph{overall} within-cascade dispersion does not differ. Near-duplication is
+strongly negatively correlated with drift ($r=-0.31$, $p=2\times10^{-85}$),
+within each class and after controlling for cascade size, and discriminates on
+its own at 0.831 AUC. The effect therefore has a mechanism---coordinated copying
+creates homogeneous subtrees, and homogeneous subtrees drift less---not just a
+statistical association.
+\item \textbf{A design rule, from an honest negative result.} Per-node drift
+features \emph{hurt} the classifier at every cascade size, while graph-level
+drift statistics help. This reconciles the discriminator result with the
+ablation and yields a concrete rule: consume drift via set-pooling, not
+concatenation.
+\item \textbf{The best detector in our comparison, and what it is worth.}
+\textbf{HybridDegradLSTM} reaches \textbf{95.85\% accuracy / 0.9876 AUC} on
+GossipCop---the best of the six models we compare against, verified over 3
+seeds. We do not claim it beats published UPFD results, and its margin over a
+strong LSTM baseline is not statistically significant. We report it as an
+engineering artifact illustrating the design rule, not as the paper's
+headline. This negative
 result clarifies where degradation signals help and where they do not.
 \end{enumerate}
 
@@ -472,6 +490,56 @@ features are not merely a proxy for cascade shape; they carry independent
 information about how content changes along a propagation tree.}
 
 % ------------------------------------------------------------------
+\subsection{What explains the effect? A copying mechanism}
+\label{sec:mechanism}
+
+The natural explanation for lower drift in fake cascades is \textbf{coordination}:
+a templated campaign pushes near-identical reposts, so a child's content barely
+changes from its parent's. Real news accrues heterogeneous commentary, so
+parent--child distances are larger. This was a narrative in earlier drafts; we
+test it directly.
+
+For each cascade we measure the \textbf{sibling near-duplicate rate}: the
+fraction of sibling pairs (nodes sharing a parent) whose $\ell_2$-normalised
+BERT embeddings have cosine similarity above a threshold. Siblings are exactly
+the nodes a coordinator would push the same content to.
+
+\begin{table}[t]
+  \centering
+  \caption{Sibling near-duplicate rate. Fake-news cascades contain markedly
+  more near-identical sibling reposts, while overall within-cascade dispersion
+  does not differ.}
+  \label{tab:mechanism}
+  \footnotesize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{lccc}
+    \toprule
+    & Real & Fake & Mann--Whitney $p$ \\
+    \midrule
+    cosine $\ge 0.90$ & .9915 & .9984 & $7\times10^{-74}$ \\
+    cosine $\ge 0.95$ & .9266 & \textbf{.9825} & $10^{-287}$ \\
+    cosine $\ge 0.98$ & .8220 & \textbf{.8795} & $3\times10^{-74}$ \\
+    within-cascade dispersion & .9826 & .9823 & $.32$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+If copying is what lowers drift, then cascades with more copying should drift
+less, regardless of class. Near-duplication correlates negatively with drift
+($r=-0.310$, $p=2\times10^{-85}$, $n=3800$), the relationship holds
+\emph{within} each class (real $r=-0.320$; fake $r=-0.153$) so it is not a
+composition effect, and it is unchanged after controlling for cascade size
+(partial $r=-0.312$). Near-duplication alone discriminates fake from real at
+0.831 AUC.
+
+This gives the paper a mechanism rather than a correlation:
+\emph{coordinated copying $\rightarrow$ near-duplicate siblings $\rightarrow$
+smaller parent--child content change $\rightarrow$ the observed lower drift}. It
+also explains why the effect is modest in magnitude ($2\%$) rather than large,
+and why it concentrates in larger cascades, where there are enough siblings for
+copying to dominate.
+
+% ------------------------------------------------------------------
 \subsection{Ablation study}
 \label{sec:ablation}
 
@@ -766,6 +834,9 @@ understanding.
   decomposition of the discriminator (Section~\ref{sec:discrimresult}).
 \item \texttt{results/incremental\_value\_gossipcop.json} --- paired-bootstrap test of whether
   content drift adds information beyond cascade shape (Section~\ref{sec:incremental}).
+\item \texttt{results/mechanism\_probe\_gossipcop.json}, \texttt{results/mechanism\_linkage\_gossipcop.json}
+  --- sibling near-duplication rates and their link to drift
+  (Section~\ref{sec:mechanism}).
 \item \texttt{results/ablations.json}, \texttt{results/ablations\_10pct.json} --- ablations at 100\% and 10\%.
 \item \texttt{results/early\_detection\_multiseed.json} --- multi-seed truncation curves.
 \item \texttt{scripts/} --- \texttt{make\_figures.py}, \texttt{analysis\_stats.py},

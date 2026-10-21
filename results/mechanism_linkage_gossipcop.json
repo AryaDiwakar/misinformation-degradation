@@ -1,0 +1,28 @@
+{
+  "subset": "gossipcop",
+  "threshold": 0.95,
+  "n_cascades": 3826,
+  "n_usable": 3800,
+  "duplicate_rate_mean": {
+    "real": 0.9266130957477972,
+    "fake": 0.9824804793062963
+  },
+  "pearson_r": -0.3099857644599979,
+  "pearson_p": 1.9970558391021052e-85,
+  "spearman_r": -0.3240564811309082,
+  "spearman_p": 1.261465096467934e-93,
+  "within_class": {
+    "real": {
+      "r": -0.3204407424888957,
+      "p": 1.2618349436514013e-46
+    },
+    "fake": {
+      "r": -0.15329305944754854,
+      "p": 1.8521208733641346e-11
+    }
+  },
+  "partial_r_given_size": -0.3121201372638388,
+  "partial_p_given_size": 1.2163179870734844e-86,
+  "auc_duplicate_alone": 0.8312054016620498,
+  "auc_size_alone": 0.21380263157894738
+}
