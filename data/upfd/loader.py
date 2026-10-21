@@ -42,30 +42,46 @@ def build_parent_index(
 
     The UPFD edge list is directed (parent -> child), so the first incoming
     edge of a node identifies its parent. When ``hop_depth`` is supplied the
-    choice is disambiguated by depth: the parent is the candidate exactly one
-    hop above. This keeps the assignment correct even if the edge list is
-    symmetrised, where the root would otherwise pick up a child as its
-    "parent".
+    assignment is checked against the depths and repaired where it disagrees:
+    the parent must sit exactly one hop above its child, and the root has no
+    parent at all. The repair pass only runs for nodes that disagree, so the
+    common case costs one extra scan of the node array.
     """
     parent = torch.full((num_nodes,), -1, dtype=torch.long)
     src, dst = edge_index[:, edge_index[0] != edge_index[1]]
-    candidates: dict = {}
-    for u, v in zip(src.tolist(), dst.tolist()):
-        candidates.setdefault(v, []).append(u)
+    src_list, dst_list = src.tolist(), dst.tolist()
+    for u, v in zip(src_list, dst_list):
+        if parent[v] == -1:
+            parent[v] = u
 
-    if hop_depth is not None:
-        hop = hop_depth.tolist()
-        for v, options in candidates.items():
-            if hop[v] == 0:
-                # The root has no parent, by definition.
-                continue
-            expected = hop[v] - 1
-            matching = [u for u in options if hop[u] == expected]
-            parent[v] = matching[0] if matching else options[0]
+    if hop_depth is None:
         return parent
 
-    for v, options in candidates.items():
-        parent[v] = options[0]
+    hop = hop_depth.tolist()
+    mismatched = [
+        v
+        for v in range(num_nodes)
+        if parent[v].item() != -1
+        and (hop[v] == 0 or hop[parent[v].item()] != hop[v] - 1)
+    ]
+    if not mismatched:
+        return parent
+
+    needed = set(mismatched)
+    candidates: dict = {}
+    for u, v in zip(src_list, dst_list):
+        if v in needed:
+            candidates.setdefault(v, []).append(u)
+
+    for v in mismatched:
+        if hop[v] == 0:
+            # The root has no parent, by definition.
+            parent[v] = -1
+            continue
+        expected = hop[v] - 1
+        options = candidates.get(v, [])
+        matching = [u for u in options if hop[u] == expected]
+        parent[v] = matching[0] if matching else options[0]
     return parent
 
 

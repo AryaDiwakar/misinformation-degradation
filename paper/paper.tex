@@ -525,9 +525,12 @@ All models degrade substantially when only 10\% of the cascade is available
 the pure LSTM (78.7\%)---a $+2.5$ point mean gap---though per-seed variance
 overlaps, so this is not significant at $n=3$. Consistent with the ablation,
 per-node drift features do not confer truncation robustness. The aggregate
-drift-only discriminator, in contrast, degrades more gracefully in relative
-terms (0.873 $\rightarrow$ 0.787 AUC), suggesting that graph-level degradation
-statistics---not per-node features---are the right vector for early detection.
+drift-only discriminator degrades in relative terms (0.879 $\rightarrow$ 0.797
+AUC), but Section~\ref{sec:discrimresult} shows this still overstates the
+case: 25.7\% of truncated cascades retain only the root, and excluding them
+drops the signal to 0.707 AUC. Graph-level degradation statistics remain the
+more promising vector for early detection, but the margin over cascade size
+alone (0.796 AUC at 10\%) is narrow.
 
 % ==================================================================
 \section{Discussion}

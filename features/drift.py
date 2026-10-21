@@ -49,7 +49,13 @@ def compute_drift(
 
 
 class DriftProjector(nn.Module):
-    """Projects raw drift features into a learned drift embedding."""
+    """Projects raw drift features into a learned drift embedding.
+
+    Not used by any current model: the DegradGNN, HybridDegradLSTM and
+    DriftPool variants project the drift vector inline. Kept for reuse by
+    future architectures.
+    """
+
     def __init__(self, drift_dim: int = 5, hidden_dim: int = 32):
         super().__init__()
         self.net = nn.Sequential(

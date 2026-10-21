@@ -1,3 +1,17 @@
+"""Cross-modal alignment (experimental — not wired into any pipeline).
+
+Implements the "Path B" cross-modal direction from the original project
+proposal: a learned projection of text and image embeddings into a shared
+space with a contrastive alignment score.
+
+**This module is not used by any training, evaluation or inference path in
+this repository.** The reported experiments use the precomputed 768-d UPFD
+BERT features only. It is kept as a documented starting point for future work.
+
+See ``features/text_encoder.py`` and ``features/image_encoder.py`` for the
+encoders it is designed to align.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

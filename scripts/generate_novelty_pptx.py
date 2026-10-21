@@ -398,7 +398,7 @@ add_table(s,
         ["DegradGNN (graph diffusion)", "models/degradation_gnn.py", "Done"],
         ["HybridDegradLSTM (fused)", "models/hybrid.py", "Done"],
         ["Trajectory tracing (DTN)", "models/degradation_trajectory.py", "Done"],
-        ["Cross-modal aligner", "features/cross_modal.py", "Done"],
+        ["Cross-modal aligner", "features/cross_modal.py", "Experimental (future work)"],
         ["Early-detection wrapper", "models/early_detector.py", "Done"],
     ],
     x=8.0, y=1.35, w=4.9, h=3.6, col_widths=[3.4, 3.0, 1.2], fs=12, hfs=12)
@@ -416,7 +416,7 @@ pic(s, os.path.join(FIG, "architecture.png"), 0.5, 1.3, w=w)
 bullets(s, 7.0, 1.4, 5.9, 5.3, [
     ("Temporal \u2192 hop-depth encoding + LSTM over cascade order.", 0, True, NAVY),
     ("Graph Diffusion \u2192 GNN message passing over the propagation tree.", 0, True, NAVY),
-    ("Cross-Modal \u2192 TextEncoder + ImageEncoder(CLIP) + CrossModalAligner.", 0, True, NAVY),
+    ("Cross-Modal \u2192 TextEncoder + ImageEncoder(CLIP) + CrossModalAligner (experimental, future work).", 0, True, NAVY),
     ("Factuality Degradation \u2192 5-dim drift vector (the novel signal).", 0, True, NAVY),
     ("Early detection \u2192 trajectory forecasting + truncation curves.", 0, True, NAVY),
     ("Each pillar is a working module, each with a saved script.", 1, False, None),

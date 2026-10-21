@@ -1,3 +1,15 @@
+"""CLIP image encoder (experimental — not wired into any pipeline).
+
+This module implements the "Path B" cross-modal direction from the original
+project proposal. **It is not used by any training, evaluation or inference
+path in this repository** — the experiments use the precomputed 768-d UPFD BERT
+features instead. It is kept as a documented starting point for future work
+and needs `clip` installed plus a model download to run.
+
+See ``features/text_encoder.py`` and ``features/cross_modal.py`` for the rest
+of that path.
+"""
+
 import torch
 import torch.nn as nn
 from typing import List, Optional
