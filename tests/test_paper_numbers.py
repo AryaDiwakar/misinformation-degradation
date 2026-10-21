@@ -99,3 +99,13 @@ def test_formatting_helpers():
     assert paper_numbers._fmt_pm(0.5, None) == "0.5000"
     assert paper_numbers._p(0.0) == "< 1e-16"
     assert paper_numbers._p(1e-70) == "1.00e-70"
+
+
+def test_manuscript_numbers_match_the_artifacts(monkeypatch):
+    """The manuscript's quoted numbers must match the tracked artifacts."""
+    import check_paper_numbers
+
+    monkeypatch.setattr(
+        sys, "argv", ["check_paper_numbers.py"]
+    )
+    check_paper_numbers.main()

@@ -13,8 +13,11 @@ streamlit run demo/drift_explorer.py
 
 Tabs:
 - **The Finding** — real-vs-fake drift histogram + per-hop bars over all 3,826
-  GossipCop test cascades (the 0.89 fake/real ratio) and the drift-only discriminator
-  story (0.87 AUC full, 0.79 AUC at 10% truncation).
+  GossipCop test cascades, showing both the pooled fake/real ratio (0.890) and
+  the hop-standardised ratio (0.977), which removes the difference in how deep
+  the two classes' cascades go. It also summarises the drift-only
+  discriminator: content drift alone reaches 0.85 AUC, while cascade size
+  alone reaches 0.79 AUC.
 - **Cascade Explorer** — pick a real or fake test cascade, see its propagation tree
   colored by per-node drift.
 - **Live Predictor** — upload an `.npz` cascade (or reuse a cached example) and get a

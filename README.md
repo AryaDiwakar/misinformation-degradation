@@ -100,6 +100,9 @@ python3 multiseed.py --subset gossipcop --seeds 1,2,3 --out results/gossipcop_re
 # Validate the tracked paper artifacts
 python3 scripts/validate_results.py
 
+# Check that the manuscript's numbers still match the artifacts
+python3 scripts/check_paper_numbers.py
+
 # Create an inference example and run the prediction CLI
 python3 scripts/create_sample_cascade.py
 python3 predict.py \

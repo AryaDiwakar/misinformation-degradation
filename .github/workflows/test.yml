@@ -23,3 +23,7 @@ jobs:
             run_experiments.py run_final.py run_gossipcop.py train_trajectory.py
       - name: Run tests
         run: python -m pytest -q
+      - name: Validate the tracked paper artifacts
+        run: python3 scripts/validate_results.py
+      - name: Check the manuscript against the artifacts
+        run: python3 scripts/check_paper_numbers.py
