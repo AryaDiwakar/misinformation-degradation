@@ -36,6 +36,9 @@ results/*
 !results/drift_discriminator_robustness.json
 !results/drift_discriminator_decomposition.json
 !results/drift_standardized.json
+!results/incremental_value_gossipcop.json
+!results/incremental_value_politifact.json
+!results/mechanism_probe_gossipcop.json
 !results/early_detection_multiseed.json
 !results/early_detection_driftpool.json
 !results/ablations.json

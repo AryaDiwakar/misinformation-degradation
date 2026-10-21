@@ -91,6 +91,12 @@ python3 scripts/analysis_discriminator_decomposition.py
 # Re-derive the drift phenomenon with the propagation-depth confound removed
 python3 scripts/analysis_drift_standardized.py
 
+# Does content drift carry information that cascade size does not?
+python3 scripts/analysis_incremental_value.py gossipcop
+
+# Probe the mechanism (homogeneous / near-duplicate reposts)
+python3 scripts/analysis_mechanism_probe.py gossipcop
+
 # Three-seed early-detection evaluation
 python3 scripts/run_early_detection.py --seeds 1,2,3
 

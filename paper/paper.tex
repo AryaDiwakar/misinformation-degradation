@@ -427,6 +427,51 @@ drops the 12-feature AUC from 0.797 to 0.707 (Table~\ref{tab:discrim}), and
 content-only from 0.803 to 0.718.
 
 % ------------------------------------------------------------------
+\subsection{Does content drift add information beyond cascade shape?}
+\label{sec:incremental}
+
+The decomposition above raises a sharper question than ``is drift
+discriminative?''. Since cascade size alone reaches 0.792 AUC, the meaningful
+question is whether content drift carries information a detector would not
+already have from the cascade's shape. We test this with a \emph{paired
+bootstrap} over identical 5-fold out-of-fold predictions (1000 resamples), so
+the difference between two feature sets is measured on exactly the same data.
+
+\begin{table}[t]
+  \centering
+  \caption{Does content drift add information beyond cascade shape?
+  Paired bootstrap over identical folds (GossipCop, 1000 resamples).}
+  \label{tab:incremental}
+  \footnotesize
+  \setlength{\tabcolsep}{2pt}
+  \begin{tabular}{lcc}
+    \toprule
+    Feature set & AUC & vs.\ size (paired bootstrap) \\
+    \midrule
+    Size only (2) & .792 & --- \\
+    Structural only (6) & .853 & --- \\
+    Content drift only (4) & .846 & \textbf{+.054} $[.040,.068]$, $p<10^{-4}$ \\
+    Size $+$ content (6) & .865 & \textbf{+.073} $[.062,.084]$, $p<10^{-4}$ \\
+    Size $+$ structural (8) & .851 & --- \\
+    All 12 & .879 & \textbf{+.086} $[.075,.097]$, $p<10^{-4}$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Three results matter. First, \textbf{content drift significantly beats cascade
+size alone} ($+.054$ AUC, $p<10^{-4}$): the signal is not reducible to ``fake
+cascades are smaller''. Second, adding content drift to size is worth more
+than adding structure to size, so the content channel contributes more than
+the structural channel. Third, \textbf{content drift beats structure at
+matched size} ($+.015$, $p=0.004$): the information is about the
+\emph{content} relationship between a node and its parent, not about the
+tree's geometry.
+
+This is the strongest form the central claim can take: \emph{degradation
+features are not merely a proxy for cascade shape; they carry independent
+information about how content changes along a propagation tree.}
+
+% ------------------------------------------------------------------
 \subsection{Ablation study}
 \label{sec:ablation}
 
@@ -482,7 +527,8 @@ The tree message passing itself helps (``w/o tree'' drops to an MLP), but the
 auxiliary drift/hop features do not. The honest conclusion: \emph{per-node
 drift features are discriminative only in the aggregate; when injected into the
 classifier they hurt at every cascade size.} This negative result reconciles the
-strong drift-only discriminator (Section~\ref{sec:discrimresult}) with the
+drift-only discriminator (Section~\ref{sec:discrimresult}) and the
+incremental-value analysis (Section~\ref{sec:incremental}) with the
 model-level ablation: the useful information is the \emph{distribution} of drift,
 not its per-node instantiation.
 
@@ -718,6 +764,8 @@ understanding.
   stratified 5-fold.
 \item \texttt{results/discriminator\_decomposition.json} --- content vs.\ structural vs.\ size
   decomposition of the discriminator (Section~\ref{sec:discrimresult}).
+\item \texttt{results/incremental\_value\_gossipcop.json} --- paired-bootstrap test of whether
+  content drift adds information beyond cascade shape (Section~\ref{sec:incremental}).
 \item \texttt{results/ablations.json}, \texttt{results/ablations\_10pct.json} --- ablations at 100\% and 10\%.
 \item \texttt{results/early\_detection\_multiseed.json} --- multi-seed truncation curves.
 \item \texttt{scripts/} --- \texttt{make\_figures.py}, \texttt{analysis\_stats.py},

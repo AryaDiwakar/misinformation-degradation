@@ -101,6 +101,37 @@ def main():
     expect("10% truncated AUC", f"{trunc_auc:.3f}", docs)
     expect("10% AUC excluding root-only", f"{excl:.3f}", docs)
 
+    # --- incremental value over cascade shape ------------------------------
+    incremental = load("incremental_value_gossipcop.json")
+    content_vs_size = incremental["cmp__content_vs__size"]
+    size_plus_content = incremental["cmp__size+content_vs__size"]
+    content_vs_structural = incremental["cmp__size+content_vs__size+structural"]
+    expect(
+        "content vs size AUC gap",
+        f"{content_vs_size['diff']:.3f}".lstrip("0"),
+        docs,
+    )
+    expect(
+        "size+content vs size AUC gap",
+        f"{size_plus_content['diff']:.3f}".lstrip("0"),
+        docs,
+    )
+    expect(
+        "content vs structural AUC gap",
+        f"{content_vs_structural['diff']:.3f}".lstrip("0"),
+        docs,
+    )
+    for label, stat in (
+        ("content vs size", content_vs_size),
+        ("size+content vs size", size_plus_content),
+        ("content vs structural", content_vs_structural),
+    ):
+        if stat["p_two_sided"] >= 0.05:
+            failures.append(
+                f"{label}: paired bootstrap p={stat['p_two_sided']:.3f} is not "
+                "significant, but the manuscript reports it as significant"
+            )
+
     # --- model comparison -------------------------------------------------
     hybrid_vs_lstm = significance["hybrid_vs_lstm_gossipcop_acc"]
     expect("Hybrid vs LSTM p-value", f"{hybrid_vs_lstm['p']:.3f}".rstrip("0").rstrip("."), docs)
