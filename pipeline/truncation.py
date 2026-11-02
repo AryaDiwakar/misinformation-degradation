@@ -36,6 +36,11 @@ def truncate_cascade(graph: Data, fraction: float) -> Data:
     parent = build_parent_index(edge_index.cpu(), keep_count, hop_depth.cpu()).to(graph.x.device)
     n_children = count_children(edge_index.cpu(), keep_count).to(graph.x.device)
 
+    node_features = {
+        key: getattr(graph, key)[keep_nodes]
+        for key in ("profile_x",)
+        if getattr(graph, key, None) is not None
+    }
     result = Data(
         x=graph.x[keep_nodes],
         edge_index=edge_index,
@@ -45,6 +50,7 @@ def truncate_cascade(graph: Data, fraction: float) -> Data:
         n_children=n_children,
         root_idx=torch.tensor([0], device=graph.x.device),
         n_nodes=torch.tensor([keep_count], device=graph.x.device),
+        **node_features,
     )
     return result
 

@@ -13,6 +13,7 @@ script asks the follow-up question that turns a correlation into a mechanism:
 Outputs ``results/mechanism_linkage_gossipcop.json``.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -39,9 +40,14 @@ def residualise(values, controls):
 
 
 def main():
-    subset = sys.argv[1] if len(sys.argv) > 1 else "gossipcop"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("subset", nargs="?", default="gossipcop")
+    parser.add_argument("--root", default="./data/upfd/raw")
+    parser.add_argument("--out", default=None)
+    args = parser.parse_args()
+    subset = args.subset
     ds = UPFDGraphDataset(
-        root="./data/upfd/raw", subset=subset, feature_type="bert", split="test"
+        root=args.root, subset=subset, feature_type="bert", split="test"
     )
 
     duplicate, drift, labels, sizes = [], [], [], []
@@ -129,12 +135,11 @@ def main():
         f"   (log size alone = {results['auc_size_alone']:.4f})"
     )
 
-    out = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "..",
-        "results",
+    out = args.out or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "results",
         f"mechanism_linkage_{subset}.json",
     )
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w") as handle:
         json.dump(results, handle, indent=2)
     print(f"\nSaved {os.path.abspath(out)}")

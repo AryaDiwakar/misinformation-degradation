@@ -38,26 +38,21 @@
 
 % ==================================================================
 \begin{abstract}
-Misinformation propagation leaves a measurable trace in how content features
-change along the propagation tree. We introduce \emph{drift}---the per-node
-feature degradation of content as it propagates through a social-network
-cascade---and show that (i) fake news drifts less than real news \textbf{at
-matched propagation depth} ($\sim$2.3\% on GossipCop; hop-standardised ratio
-0.977, cascade-level $p=0.048$; not significant at cascade level on
-PolitiFact), (ii) this signal is \textbf{not} a proxy for cascade shape:
-content drift beats cascade size alone by \textbf{$+0.054$ AUC} (paired
-bootstrap, $p<10^{-4}$) and beats structure at matched size, and (iii) it has a
-\textbf{verified mechanism}---fake-news cascades contain markedly more
-near-duplicate \emph{sibling} reposts (98.3\% vs.\ 92.7\% of sibling pairs
-above cosine 0.95, $p=10^{-287}$), and near-duplication is strongly negatively
-correlated with drift ($r=-0.31$, $p=2\times10^{-85}$) within each class and
-after controlling for cascade size. Coordinated copying produces homogeneous
-subtrees, and homogeneous subtrees drift less. We further report an honest
-partial-cascade analysis: all models degrade under truncation, per-node drift
-features do \emph{not} help the classifier, and aggregate drift statistics
-weaken sharply at 10\% cascade size once root-only cascades are excluded. The
-contribution is a measurement, a mechanism and a design rule, not a new
-state-of-the-art detector.
+Misinformation propagation leaves a measurable, but modest, trace in how
+content features change along a propagation tree. We define \emph{drift} as
+the parent--child change in node representations and find that fake-labelled
+cascades drift less at matched depth on GossipCop (2.3\%; hop-standardised
+ratio 0.977; cascade-level $p=0.048$); the corresponding PolitiFact
+cascade-level comparison is not significant ($p=0.52$). Content-drift
+statistics add information beyond cascade size in an internal cross-validated
+analysis ($+0.054$ AUC; paired bootstrap $p<10^{-4}$). Fake cascades also
+contain more near-duplicate siblings, and sibling duplication is associated
+with lower drift within each class and after controlling for cascade size.
+These observational results are consistent with a copying-based explanation
+but do not establish coordination or causality. Per-node drift features do not
+improve the classifier, and the signal weakens in partial cascades. The
+contribution is a controlled measurement, mechanism-consistent evidence, and a
+design lesson---not a state-of-the-art detector.
 \end{abstract}
 
 % ==================================================================
@@ -66,13 +61,13 @@ state-of-the-art detector.
 
 Misinformation spreads through social networks in \emph{propagation cascades}: a
 root post, a set of reposts, and a tree of interactions. Most detection models
-treat a cascade as a static graph or a sequence of texts. We observe that
+treat a cascade as a static graph or a sequence of texts. We ask whether
 cascades carry an additional signal: \textbf{content features change as they
-propagate}. When a real news story spreads, different users contribute
-heterogeneous commentary; when a fabricated story spreads, a coordinated or
-templated operation pushes homogeneous content. This asymmetry should leave a
-measurable trace in the \emph{feature drift} between a node and its parent in
-the propagation tree.
+propagate}. One hypothesis is that real-news cascades accumulate more
+heterogeneous commentary, while some fabricated-news cascades contain more
+repeated content. If so, this difference may leave a measurable trace in the
+\emph{feature drift} between a node and its parent. We test that account as an
+empirical hypothesis, not as an assumption about every cascade.
 
 This work makes the following contributions:
 \begin{enumerate}[leftmargin=*,itemsep=2pt]
@@ -92,16 +87,16 @@ identical folds, $p<10^{-4}$), beats structure at matched size ($+0.015$,
 $p=0.004$), and adds more than structure does when combined with size. The
 information is about the \emph{content} relationship between a node and its
 parent, not the tree's geometry.
-\item \textbf{A verified mechanism.} We measure the \textbf{sibling
-near-duplicate rate}---the fraction of nodes sharing a parent whose content is
-near-identical---and find fake-news cascades contain far more of it (98.3\%
-vs.\ 92.7\% of sibling pairs above cosine 0.95, $p=10^{-287}$) while
-\emph{overall} within-cascade dispersion does not differ. Near-duplication is
-strongly negatively correlated with drift ($r=-0.31$, $p=2\times10^{-85}$),
-within each class and after controlling for cascade size, and discriminates on
-its own at 0.831 AUC. The effect therefore has a mechanism---coordinated copying
-creates homogeneous subtrees, and homogeneous subtrees drift less---not just a
-statistical association.
+\item \textbf{Evidence consistent with a copying-based explanation.} We measure
+the \textbf{sibling near-duplicate rate}---the fraction of nodes sharing a
+parent whose content is near-identical---and find fake-news cascades contain
+more near-duplicate siblings (98.3\% vs.\ 92.7\% above cosine 0.95,
+$p=10^{-287}$), while \emph{overall} within-cascade dispersion does not differ.
+Near-duplication is negatively associated with drift ($r=-0.31$,
+$p=2\times10^{-85}$), within each class and after controlling for cascade
+size, and discriminates on its own at 0.831 AUC. This pattern supports a
+copying-based account, but these observational embedding analyses do not
+identify coordinated actors or establish a causal mechanism.
 \item \textbf{A design rule, from an honest negative result.} Per-node drift
 features \emph{hurt} the classifier at every cascade size, while graph-level
 drift statistics help. This reconciles the discriminator result with the
@@ -490,7 +485,7 @@ features are not merely a proxy for cascade shape; they carry independent
 information about how content changes along a propagation tree.}
 
 % ------------------------------------------------------------------
-\subsection{What explains the effect? A copying mechanism}
+\subsection{Is sibling copying consistent with the effect?}
 \label{sec:mechanism}
 
 The natural explanation for lower drift in fake cascades is \textbf{coordination}:
@@ -501,8 +496,9 @@ test it directly.
 
 For each cascade we measure the \textbf{sibling near-duplicate rate}: the
 fraction of sibling pairs (nodes sharing a parent) whose $\ell_2$-normalised
-BERT embeddings have cosine similarity above a threshold. Siblings are exactly
-the nodes a coordinator would push the same content to.
+BERT embeddings have cosine similarity above a threshold. Sibling similarity is
+a measurable proxy for repeated content within a local branch; it is not, by
+itself, evidence that the accounts are coordinated.
 
 \begin{table}[t]
   \centering
@@ -532,12 +528,13 @@ composition effect, and it is unchanged after controlling for cascade size
 (partial $r=-0.312$). Near-duplication alone discriminates fake from real at
 0.831 AUC.
 
-This gives the paper a mechanism rather than a correlation:
-\emph{coordinated copying $\rightarrow$ near-duplicate siblings $\rightarrow$
-smaller parent--child content change $\rightarrow$ the observed lower drift}. It
-also explains why the effect is modest in magnitude ($2\%$) rather than large,
-and why it concentrates in larger cascades, where there are enough siblings for
-copying to dominate.
+Together, these results are \textbf{consistent with} the pathway
+\emph{content reuse among siblings $\rightarrow$ smaller parent--child change
+$\rightarrow$ lower observed drift}. They do not show that coordination caused
+the duplication or that duplication mediates the class difference: the
+embeddings are proxies, and the analysis is observational. This is a plausible
+mechanism to test with timestamped posts and independently verified coordination
+labels, not a causal conclusion from the present data.
 
 % ------------------------------------------------------------------
 \subsection{Ablation study}
@@ -721,31 +718,40 @@ set-pooling) rather than concatenating per-node drift.
 \section{Conclusion}
 \label{sec:conclusion}
 
-We demonstrated that misinformation propagation leaves a measurable signature in
-how content features change along the tree: \textbf{fake news drifts less than
-real news at matched propagation depth}---about 2\% on GossipCop
-(hop-standardised ratio 0.977, cascade-level $p=0.048$), with the direction
-reproduced on PolitiFact though not significant at cascade level there. Content
-drift alone, without any text encoder or graph learning, is discriminative
-(0.846 AUC), though cascade size is a strong competing explanation (0.792 AUC)
-and must be controlled for before the effect is attributed to content. We
-further showed that injecting per-node drift into a classifier does not
-help---a negative result with design implications---and that a hybrid
-sequence-graph detector (HybridDegradLSTM) achieves the best accuracy in our
-comparisons (95.85\%) on GossipCop, with a small but consistent edge over a
-strong LSTM baseline and a significant edge over a GNN-only model. Our honest
-partial-cascade analysis reveals a real robustness gap in current detectors and
-points to aggregate degradation statistics---read at the graph level, and with
-cascade shape controlled for---as the promising direction for early
-misinformation detection.
+This work makes \textbf{content change along propagation edges measurable} and
+asks whether it reveals anything beyond cascade topology. On GossipCop,
+fake-labelled cascades exhibit about 2.3\% lower drift at matched depth
+(cascade-level $p=0.048$); the PolitiFact estimate points in the same direction
+but is not significant at cascade level ($p=0.52$). More importantly, in
+cross-validation on the UPFD test split, content-drift statistics add
+information beyond cascade size: they reach 0.846 AUC versus 0.792 for size
+alone, while adding content drift to size outperforms adding structural features
+(0.865 vs.\ 0.851 AUC; $p=0.004$).
 
-\textbf{A note on self-correction.} An earlier version of this manuscript
-reported an $\sim$11\% drift effect with $p<10^{-70}$ and described the
-discriminator as using ``no text or graph features''. Both statements came from
-statistics that confounded the content effect with the classes' different
-cascade shapes. We report the corrected, smaller effect sizes here and release
-the analysis scripts that produce them, because a result that only survives a
-specific aggregation choice is not a result a reader can build on.
+Sibling-level repetition provides a plausible explanation for this signal. Fake
+cascades contain more near-duplicate siblings, and duplication is associated
+with lower drift within both classes and after controlling for cascade size.
+Together, these results connect a measurable property of transmission---how
+much a child changes relative to its parent---to a local pattern of content
+reuse. They support a copying-based account, while remaining observational
+rather than causal evidence.
+
+The modeling results yield a practical design principle:
+\textbf{represent drift as a cascade-level distribution, not as an
+unquestioned per-node feature}. Aggregate summaries carry useful information,
+whereas injecting drift at each node hurts the tested classifiers. This
+distinction also sets a boundary for early detection: at 10\% cascade size,
+content-only AUC falls to 0.718 after root-only cascades are excluded, below the
+0.796 size-only baseline. The contribution is therefore not a claim that one
+new detector solves misinformation; it is a measurement framework, evidence
+that the signal adds information beyond topology, and a concrete rule for how
+propagation models should consume it.
+
+By shifting attention from \textbf{how far a cascade spreads} to \textbf{how
+its content changes as it spreads}, this study opens a complementary direction
+for propagation-based misinformation research. The next step is to test the
+same edge-level and cascade-level hypotheses on independent, timestamped
+datasets, where content reuse and coordination can be measured directly.
 
 % ==================================================================
 \begin{thebibliography}{9}

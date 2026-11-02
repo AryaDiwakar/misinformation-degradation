@@ -1,0 +1,630 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage{microtype}
+
+\title{Temporal Graph Diffusion Tracing for Cross-Modal Misinformation Factuality Degradation}
+
+\author{
+\IEEEauthorblockN{Arya Diwakar}
+\IEEEauthorblockA{School of Computer Science\\and Engineering\\
+Vellore Institute of Technology\\Vellore, India}
+\and
+\IEEEauthorblockN{Doravari Sakthi Prasad}
+\IEEEauthorblockA{School of Computer Science\\and Engineering\\
+Vellore Institute of Technology\\Vellore, India}
+\and
+\IEEEauthorblockN{Jeswanth G}
+\IEEEauthorblockA{School of Computer Science\\and Engineering\\
+Vellore Institute of Technology\\Vellore, India}
+\and
+\IEEEauthorblockN{Project Guide}
+\IEEEauthorblockA{Dr. Jeevanantham A K\\
+Professor (Higher Academic Grade)\\
+School of Computer Science and Engineering\\
+Vellore Institute of Technology, Vellore, India}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Most propagation-based detectors treat a cascade as a fixed graph plus a root
+post, and ignore what happens to the text representation as a claim moves from
+one post to the next. We look at that edge-level change directly. Using the
+official GossipCop and PolitiFact splits of UPFD, with frozen 768-dimensional
+BERT features, we measure the distance between a child post's representation
+and its parent's. A naive pooled comparison is dominated by the fact that real
+cascades run deeper and wider than fake ones: on GossipCop the fake-to-real
+ratio falls from 0.901 pooled to 0.977 once we weight by depth. The per-cascade
+comparison (depth $\geq2$) gives 0.975, $p=0.048$ -- a small, borderline
+effect -- while PolitiFact shows the same direction (0.969) but is not
+significant ($p=0.522$). In five-fold cross-validation confined to the
+GossipCop test partition, compact drift summaries reach 0.846 AUC against 0.792
+for size alone ($\Delta=0.054$, bootstrap CI [0.040, 0.068]); this stays
+inside the test split, so it is exploratory rather than an independent test.
+Fake-labelled cascades also carry more near-duplicate sibling posts, and
+sibling duplication correlates negatively with drift ($r=-0.310$), but the link
+is observational and says nothing about coordination. Across five seeds the
+drift-aware hybrid is not significantly better than an LSTM (accuracy
+$p=0.832$, AUC $p=0.212$). The takeaway is that parent--child change is a real,
+measurable signal -- not a proven detector improvement.
+\end{abstract}
+
+\begin{IEEEkeywords}
+misinformation detection, propagation cascades, content drift, UPFD,
+social-network analysis
+\end{IEEEkeywords}
+
+\section{Introduction}
+A misinformation post is rarely shared verbatim. As it moves through a platform,
+each repost rephrases, quotes, or trims the original, and the people who see it
+add their own replies. The UPFD benchmark captures this as a tree: nodes are
+posts, edges are reposts or replies, and every node carries a BERT embedding of
+its text. What the benchmark does not make easy to see is the simplest question
+we ask here -- when one post points to its parent, how much does the text
+representation actually change?
+
+We call that change \emph{parent--child content drift}. The guess behind it is
+mundane: a cascade full of copied or templated posts should show less local
+change than one with varied commentary. That is a tendency across cascades, not
+a rule for any single post, and certainly not a way to read intent from
+embedding similarity.
+
+The title under which this work is submitted uses words we have had to pin down
+narrowly. ``Temporal'' means topological depth in the tree, not wall-clock time.
+``Cross-modal'' means the text-embedding view together with the
+propagation-graph view -- not images, audio, or video. ``Factuality
+degradation'' is not something we observe directly; we only compare embedding
+change across labels that were already fact-checked. The point matters because a
+representation drifting does not by itself show a post became less truthful.
+
+Our contribution is narrower than the title suggests, and we keep it that way.
+On UPFD \cite{dou2021upfd} we: (1) show why pooling all nodes hides a depth
+confound and report the comparison after standardizing by depth; (2) compare
+compact drift summaries with size and structure using cross-validation that
+stays inside the test partition, labelled exploratory on purpose; (3) look at
+sibling repetition as a correlate and report five-seed model runs without
+claiming a win over a sequence baseline. We make no claim to state of the art,
+to a causal mechanism, or to priority over earlier work.
+
+Why look at the edge at all? Most public misinformation benchmarks ship a
+cascade as a single labelled graph, so the natural unit for a detector is the
+whole tree. The parent--child link is the one place where the benchmark already
+tells us the direction of transmission, and it is exactly where a repost can
+differ from what it replies to. We therefore treat the edge as the smallest
+unit at which retransmission can be observed, while still reporting at the
+cascade level so the statistics stay honest.
+
+\section{Related Work}
+Two lines of work sit behind this. The first builds detectors from propagation
+structure. UPFD itself supplies the GossipCop and PolitiFact trees we use, with
+node features ready for graph classification \cite{dou2021upfd}. BiGCN reads
+propagation and dispersion directions in the tree \cite{bian2020bigcn}; earlier
+recurrent models encode the order in which posts appear \cite{ma2016recurrent}.
+These are prediction systems first.
+
+The second line is the one our title loosely echoes. Fu \emph{et al.} use
+``feature drift'' for how fake-news features shift across datasets or over time,
+and study what that means for transferring a model \cite{fu2023drift}. Bai
+\emph{et al.} fuse post meaning with the path and structure of propagation
+using attention over tree nodes and edges \cite{bai2023tree}. GCN and GAT are
+the standard aggregation tools \cite{kipf2017gcn,velickovic2018gat}, and BERT
+supplies the contextual node features \cite{devlin2019bert}. None of these
+measure the pairwise change between a post and its parent, which is the quantity
+we study. We therefore borrow the word ``drift'' plainly; we are not presenting
+it, or the broader use of text and structure, as novel.
+
+The propagation structure has also been studied for early detection, where only
+part of a cascade is observed at decision time. We return to that setting in the
+partial-cascade experiments and explain there why it asks a different question
+from the full-cascade comparison reported above.
+
+\section{Data and Measurement}
+\subsection{Benchmark and protocol}
+We work with the UPFD release of GossipCop and PolitiFact, using the frozen
+768-dimensional BERT features and the train/validation/test partitions exactly
+as supplied \cite{dou2021upfd}. GossipCop gives us 1,092 training, 546
+validation, and 3,826 test cascades; PolitiFact is far smaller at 62, 31, and
+221. That tiny PolitiFact training set makes any neural-model number from it
+unreliable, so we keep it only for the drift comparison, not for ranking
+classifiers. The main models are trained on the fixed GossipCop split, with
+the checkpoint chosen by validation accuracy, and each is rerun across five
+seeds. Test cascades never enter checkpoint selection.
+
+One example in this benchmark is a whole cascade, labelled real or fake, not an
+individual post. Nodes are posts; edges are reposts or replies; the root sits
+at depth zero. We take both the graph and the BERT features from the release
+rather than rebuilding them from raw platform data. That keeps us comparable
+with earlier UPFD work, but it also means we inherit whatever collection-time
+or preprocessing choices the benchmark authors made. We are not reconstructing
+a cascade's true timeline: depth is a topological order, not a guaranteed
+timestamped sequence of posts.
+
+For the primary neural comparison the train, validation, and test indices stay
+fixed. Each seed sets the same initial seed in Python and the deep-learning
+framework, trains on the training partition, and keeps the checkpoint with the
+best validation accuracy. We then score that one checkpoint once on the test
+partition for accuracy, F1, ROC-AUC, and average precision, and report the mean
+and standard deviation over the five seeds. The paired tests line up results by
+seed, so they describe variation across random initializations on this one
+split -- not across different train/test partitions.
+
+\subsection{Edge-level change and aggregation}
+For a node $i$ with representation $x_i$ and parent $p(i)$, we define the two
+edge distances
+\begin{equation}
+ d_i^{\mathrm{cos}}=1-\frac{x_i^\top x_{p(i)}}
+ {\|x_i\|_2\|x_{p(i)}\|_2},\qquad
+ d_i^{\mathrm{L2}}=\|x_i-x_{p(i)}\|_2 .
+ \label{eq:drift}
+\end{equation}
+The root has no parent, so both are set to zero there. To summarize a cascade
+we combine them into a single magnitude
+$m_i=\sqrt{(d_i^{\mathrm{cos}})^2+(d_i^{\mathrm{L2}})^2}$. The L2 term scales
+with the embedding, so we read this as a representation-space quantity rather
+than a calibrated semantic distance; the cosine term rides along as a
+scale-insensitive counterpart.
+
+Pooling every node into one mean is misleading because it weights cascades by
+their size and mixes depths together. We therefore report two cleaner views.
+The first, a depth-standardized class mean, reweights each observed depth by
+the pooled depth distribution so the two classes meet at the same depth mix.
+The second is a cascade-level mean built only from nodes at depth $\geq2$, one
+value per cascade, compared with an independent-samples test. Its $p$-value is
+nominal -- we do not correct for the several descriptive comparisons we run.
+
+Concretely, let $\bar m_{y,h}$ be the mean magnitude for class $y$ at hop
+$h$, and let $q_h$ be the pooled share of nodes at that hop. The
+depth-standardized mean is $\sum_h q_h\bar m_{y,h}$: it asks whether the class
+means differ under a common depth composition, not whether one cause explains
+the difference. The cascade-level version averages $m_i$ within each cascade
+over nodes at hop two or deeper and then compares the per-cascade values.
+Keeping hop one out stops the root's by-definition zero from artificially
+pulling a cascade mean down, but it also means very shallow cascades drop out
+of this estimand entirely; we report both class counts alongside the result.
+
+\subsection{Compact feature-group diagnostics}
+For each cascade we summarize the two content-change dimensions, along with
+depth, normalized child count, and a root indicator, by their mean and standard
+deviation, and we add log cascade size and maximum depth. A random forest of
+200 trees is scored by stratified five-fold cross-validation over the official
+test cascades, and a paired bootstrap compares its out-of-fold predictions on
+the same cascades. Because the test partition does double duty here -- both for
+the cross-validation and for the model -- these AUCs are exploratory looks
+inside one split, not a clean estimate on unseen data.
+
+The four content features are the mean and standard deviation of the two
+parent--child distances. Structural features are the matching moments of
+normalized hop depth, normalized child count, and the root indicator; size
+features are log node count and maximum depth. We keep the groups apart on
+purpose: if the concatenated set scores high, that should not be read as proof
+that content change -- rather than cascade geometry -- is what separates the
+classes. The forest is a diagnostic probe, not the main detector, and its
+folds are stratified by cascade so that posts from one cascade never land in
+two folds at once.
+
+For the paired comparison we resample out-of-fold probabilities from the same
+five folds by cascade and report the percentile interval on the content-only
+minus size-only AUC gap. That interval captures resampling noise for this
+partition and these folds; it does not fix the fact that we reused the test
+split, and it is not a cross-platform uncertainty. No feature or threshold in
+this retrospective probe is chosen on a separate validation set.
+
+\subsection{Sibling repetition}
+Within each cascade that has a sibling group, we count the share of sibling
+pairs whose L2-normalized embeddings sit at cosine similarity of at least 0.95,
+then relate that share to the cascade's drift. Similarity stands in for
+repetition; it cannot tell us whether two posts were copied, coordinated, or
+simply similar for some other reason.
+
+Here the unit is the cascade, not each sibling pair. We fix the threshold at
+0.95 cosine on L2-normalized embeddings and drop cascades with no sibling pair,
+leaving 3,800 of the 3,826 GossipCop test cascades. The thresholded rate is an
+interpretable proxy, and we use Pearson correlation against the cascade's
+non-root mean drift. Moving the threshold shifts the absolute proportion -- the
+project outputs include other cut-offs -- so we avoid reading the tiny
+correlation $p$-value as a mechanism. With this many cases, even a modest
+observational association can clear a significance bar.
+
+\subsection{Neural models and training}
+The comparison spans graph convolution (GCN), graph attention (GAT),
+bidirectional propagation-graph convolution (BiGCN), a depth-ordered
+bidirectional LSTM, DegradGNN, and HybridDegradLSTM. The LSTM baseline orders
+node embeddings by propagation depth and runs them through a bidirectional
+LSTM. DegradGNN projects the per-node cosine distance, L2 distance, depth,
+child count, and root indicator into tree message passing. The hybrid joins a
+sequence representation with a tree representation. These models let us ask two
+different things: whether compact aggregate statistics track the label, and
+whether an architecture that explicitly consumes drift helps. The hybrid test
+is not a clean drift ablation, because it also changes the architecture and
+adds auxiliary features.
+
+All models take the 768-dimensional frozen BERT inputs, use a hidden dimension
+of 128, two message-passing layers where relevant, and dropout 0.3. We train
+with AdamW at learning rate $10^{-3}$ and weight decay $10^{-5}$, batch size
+64, up to 20 epochs, and early stopping with patience 8, keeping the
+checkpoint with the best validation accuracy. Each primary GossipCop model is
+reported as mean and standard deviation over the same five seeds, and paired
+$t$-tests compare seed-matched outcomes. With only five pairs those tests are
+weak, so we treat them as rough checks rather than precise uncertainty, and we
+deliberately avoid crowning a best seed.
+
+In the hybrid, every 768-dimensional node vector is projected to 128 dimensions.
+The depth-sorted sequence goes through a two-layer bidirectional LSTM with 128
+units per direction, giving a 256-dimensional sequence summary. Alongside it,
+the graph branch projects the five raw drift and structural values plus a
+learned depth embedding, aggregates over two neighbor rounds, and mean-pools
+the final 128-dimensional node states. A two-layer perceptron then classifies
+the 384-dimensional concatenation. Root drift stays masked to zero while
+rootness is carried as its own structural feature. This layout is why a
+hybrid-versus-LSTM gap cannot be credited to the drift vector alone: the hybrid
+also adds tree aggregation and rewires the fused representation.
+
+The per-node drift fed to the network comes from the frozen input embeddings,
+not from hidden states that shift during training. The edge distances we report
+are therefore a fixed input-side diagnostic even though the classifier's own
+representations are learned. Whether the signal holds up under a fine-tuned
+encoder is left for future work. As shipped, the model sees the full benchmark
+tree at prediction time unless we truncate it on purpose; it is not a streaming
+classifier that updates after each new post.
+
+\section{Results}
+\subsection{Depth changes the interpretation of drift}
+On GossipCop, real cascades average 75.8 nodes against 39.3 for fake-labelled
+ones, and 80.4\% of real nodes sit at depth one versus 69.0\% of fake nodes.
+Shallow nodes show larger changes on average, so when we pool everything the
+fake-to-real drift ratio comes out 0.901 -- an overstatement of the
+depth-controlled gap. Weight by depth and the ratio becomes 0.977, i.e. a 2.3\%
+lower mean for fake-labelled cascades. Restrict the cascade-level view to depth
+$\geq2$ and it is 0.975 ($p=0.048$, nominal; 1,910 real and 1,916 fake
+cascades). The effect is small and the test is borderline, so caution is due.
+
+The depth imbalance is not trivial: the GossipCop test set holds 219,989 nodes,
+with 80.4\% of real-labelled but 69.0\% of fake-labelled nodes at hop one. At
+hop one the mean magnitude is about 8.14 for real and 8.04 for fake, while over
+nodes at hop two or deeper it is about 3.49 and 3.41. The depth mix therefore
+shifts the pooled class means even though the within-depth gap is smaller. A
+node-wise $t$-test across more than two hundred thousand observations would also
+pretend posts from one cascade are independent, inflating precision; that is why
+our main test aggregates to the cascade. The depth-standardized figure is
+descriptive, and the cascade-level test is the inference we lean on.
+
+The fake-to-real ratio sits below one at several common non-root depths -- 0.896
+at hop two, 0.929 at hop three, 0.838 at hop four, 0.742 at hop five -- but the
+pattern is not clean. At hop seven the estimate flips above one, on just 23 real
+and 25 fake nodes. We do not read individual-hop tests as separate replications,
+since later hops are sparse and we look at many of them. That scatter is another
+reason to report one aggregate standardized estimate instead of claiming that
+every fake cascade, or every depth, shows reduced change.
+
+PolitiFact tells a similar story with weaker support: the depth-standardized
+ratio is 0.911, yet the cascade-level ratio is 0.969 and not significant
+($p=0.522$; 108 real and 113 fake cascades). The direction matches GossipCop,
+but the cascade-level evidence does not hold up on this smaller set. This is
+exactly why the pooled node statistic should not be read as a pure content
+effect.
+
+\begin{table}[t]
+\caption{Depth-standardized and cascade-level drift comparisons. Ratios are
+fake-labelled / real. Cascade-level test uses one mean per cascade at depth
+$\geq2$.}
+\label{tab:drift}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{lccc}
+\toprule
+Dataset & Depth-std. & Cascade-level & $p$ \\
+\midrule
+GossipCop & 0.977 & 0.975 & 0.048 \\
+PolitiFact & 0.911 & 0.969 & 0.522 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Drift summaries and cascade size}
+In the exploratory cross-validation on the official GossipCop test partition,
+the content-only feature group reaches AUC 0.846 against 0.792 for size alone.
+The paired out-of-fold gap is 0.054, with a percentile-bootstrap 95\% interval
+of [0.040, 0.068]. Add content summaries to size and the AUC is 0.865; size
+plus structure gives 0.850. The representation statistics do separate the
+labels within this partition beyond size, but that is not the same as proving
+they generalize: the features and the evaluation both live inside the official
+test subset, so an untouched external set would be needed to confirm any
+predictive value.
+
+The full 12-feature diagnostic scores 0.879, and structural-only 0.853. That
+fits the idea that the groups carry complementary information, yet the full-set
+number does not say which group earns the credit, because the blocks correlate
+and every estimate uses the same test partition. The bigger point is that size
+alone already hits 0.792. So the fair reading is comparative: the edge-derived
+summaries tell the labels apart better than these two size variables in this
+diagnostic -- not that drift stands apart from every tree property, or that the
+same lift will show up on fresh data.
+
+We also tried nested groups: size plus content reaches 0.865 AUC, size plus
+structure 0.850, a paired gap of about 0.015 with bootstrap interval
+[0.005, 0.025]. Suggestive, but it carries the same within-partition caveat, so
+we report it to make the comparison visible, not as a confirmed generalizable
+edge for the content features.
+
+\begin{table}[t]
+\caption{Exploratory five-fold cross-validation within GossipCop's official
+test partition. Results are not independent held-out estimates.}
+\label{tab:diagnostic}
+\centering
+\footnotesize
+\begin{tabular}{lcc}
+\toprule
+Feature group & AUC & Paired difference vs. size \\
+\midrule
+Size (2 features) & 0.792 & --- \\
+Content drift (4 features) & 0.846 & $+0.054$ [0.040, 0.068] \\
+Size + content drift & 0.865 & $+0.073$ \\
+Size + structure & 0.850 & $+0.058$ \\
+All 12 summaries & 0.879 & $+0.086$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Repetition is associated with lower drift}
+At cosine similarity $\geq0.95$, the mean sibling near-duplicate rate is 0.983
+in fake-labelled cascades and 0.927 in real-labelled ones. Across the 3,800
+usable cascades, duplication rate and drift correlate negatively
+($r=-0.310$), and the sign holds within each label and after adjusting linearly
+for log cascade size ($r=-0.312$). The broader within-cascade pairwise
+similarity is almost the same across classes in the companion probe (0.9826
+versus 0.9823), so the sibling result looks like localized repetition rather
+than a uniform rise in all within-cascade similarity. Still, the correlation is
+observational and stays inside the test partition; it points to no causal path
+and no coordinated actors.
+
+The threshold exposes how fragile this is. At 0.90 the near-duplicate rates are
+already high in both classes (0.998 fake, 0.991 real); at 0.98 they are 0.880
+and 0.822. That is why we anchor on the chosen 0.95 operationalization instead
+of treating one arbitrary cut-off as natural. Mean pairwise similarity over all
+posts in a cascade does not split the classes the same way, which hints that
+local sibling repetition captures something different from global homogeneity.
+The data do not test that causal story, though: the same similarity can come
+from identical source wording, boilerplate, platform conventions, or plain
+user copying.
+
+\subsection{Model comparison and negative evidence}
+Table~\ref{tab:models} lists the primary GossipCop runs. HybridDegradLSTM pairs
+a depth-ordered bidirectional LSTM with a tree encoder that carries the drift
+features; across five seeds its mean accuracy is 0.9564 and AUC 0.9874. The
+LSTM baseline reaches 0.9573 and 0.9852. Paired tests over the matching seeds
+find no significant gap in accuracy ($p=0.832$) or AUC ($p=0.212$), so we do
+not claim the drift-aware hybrid beats the LSTM. It does beat DegradGNN, but
+that comparison cannot pin the gain on the drift features, because the hybrid
+also adds a sequence branch.
+
+The paired accuracy difference, HybridDegradLSTM minus BaselineLSTM, averages
+$-0.00094$ across seeds, while the AUC difference averages $+0.00224$. The
+signs disagree by metric and neither test is significant. The standard
+deviations in Table~\ref{tab:models} also show the runs are not rock-steady
+across initializations: BiGCN's accuracy spread is 0.0238, far wider than the
+hybrid's 0.0062. The ROC-AUC order may favor the hybrid, yet five seeds do not
+suffice to call that order reliable or to credit it to drift. The honest
+conclusion is the absence of clear evidence for an incremental hybrid benefit,
+not a proof that the two approaches are equivalent.
+
+\begin{table}[t]
+\caption{Primary GossipCop test results, mean $\pm$ standard deviation over
+five seeds. Fixed official split; validation-accuracy checkpoint selection.}
+\label{tab:models}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{3.3pt}
+\begin{tabular}{lcc}
+\toprule
+Model & Accuracy & ROC-AUC \\
+\midrule
+GCN & $0.7841\pm0.0110$ & $0.8694\pm0.0080$ \\
+GAT & $0.9165\pm0.0046$ & $0.9709\pm0.0019$ \\
+BiGCN & $0.9303\pm0.0238$ & $0.9772\pm0.0097$ \\
+DegradGNN & $0.9294\pm0.0029$ & $0.9771\pm0.0006$ \\
+BaselineLSTM & $0.9573\pm0.0034$ & $0.9852\pm0.0019$ \\
+HybridDegradLSTM & $0.9564\pm0.0062$ & $0.9874\pm0.0017$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+An earlier single-run component ablation (seed 1) found that stripping per-node
+drift and hop features actually lifted DegradGNN accuracy from 0.9247 to 0.9378.
+That is a weak, single-run signal, but it is enough to warn against treating
+drift as a node feature that always helps. A separate three-seed partial-cascade
+study showed all compared models losing substantial accuracy at 10\% of the
+cascade, and root-only truncations carry zero drift by construction. Together
+they argue for measuring drift in aggregate while leaving a robust early-warning
+design an open problem.
+
+For clarity, that ablation compares full DegradGNN (accuracy 0.9247, ROC-AUC
+0.9705) with the same run minus drift (0.9378, 0.9829), minus depth (0.9326,
+0.9787), and minus both auxiliary groups (0.9365, 0.9796). A no-tree MLP scores
+even higher (0.9634, 0.9866), which tells us this one run does not isolate a
+message-passing benefit on the chosen split. None of these are averaged over
+seeds, so they should not be lined up numerically against the five-seed primary
+table as if they carried equal weight. We include them as a counter to the
+tempting but unsupported claim that dropping drift into every node must improve
+classification.
+
+In the previously checked three-seed partial-cascade test, models trained on
+full cascades are then scored after keeping only the shallowest fraction of each
+test cascade. At 10\% mean accuracy is 0.787 for the LSTM, 0.814 for DegradGNN,
+and 0.808 for the hybrid; by 25\% all three sit near 0.91. The 10\% gap is
+descriptive only and was not significant with three seeds. For the compact
+feature probe, content-only AUC at 10\% is 0.803 with all truncated cascades
+included but drops to 0.718 once root-only cases are removed. About 25.7\% of
+truncated test cascades contain only the root, where parent--child drift is
+zero by definition. That boundary means partial-cascade drift scores mix a real
+content signal with the mere presence of at least one edge, so they must not be
+sold as reliable early detection on their own.
+
+These early numbers answer a different question from the five-seed full-cascade
+evaluation: the models train on complete cascades and are then tested on
+cascades cut to a fraction of their nodes. The setup measures no latency from
+event onset, because timestamps and an online intervention policy are absent,
+and it trains no separate classifier per observation fraction. The 10\% figures
+are therefore a stress test of missing input, not evidence of operational early
+detection. A real deployment study would need timestamp-faithful truncation,
+fixed observation windows, calibration, and an error-cost analysis.
+
+\section{Discussion and Limitations}
+On GossipCop the descriptive finding is modest: after depth is controlled,
+representation change along parent--child edges still differs by label, but the
+effect is small and does not reach significance on PolitiFact. The sibling
+result is one possible reading -- more repeated sibling content, lower drift --
+yet it cannot tell copying apart from shared source text, platform conventions,
+or other confounders, and we have no coordination labels to check against.
+
+Several more limits are worth stating plainly. Both datasets lean on benchmark
+labels and platforms, so label noise, collection practice, and
+class-conditional tree construction can all leak into the results. The L2 term
+is sensitive to embedding scale. The compact-feature probe reuses the official
+test partition for cross-validation and must stay exploratory, not a clean
+generalization test. PolitiFact is small and its neural numbers are unstable.
+And the five-seed primary comparison lives on one benchmark split while the
+ablation is single-run and the early-detection work is three-seed. Together
+these rule out any claim of broad robustness or operational readiness.
+
+The benchmark is also observational and historically bounded. GossipCop and
+PolitiFact were built around fact-checking labels, not drawn as random samples
+of social media, so their cascades may differ in coverage, audience, topic,
+platform behavior, and moderation history. A label-linked embedding pattern
+could therefore reflect those selection choices as much as message
+retransmission, and the present comparison cannot pull the two apart. A
+replication worth its name would use independently collected data, keep
+timestamps and parent links, document how labels were adjudicated, and test
+across time and topic rather than within a single random split.
+
+Where the cascade is the right scientific unit, we keep the inference at that
+level, so a few very large trees cannot dominate the significance test just by
+holding many posts. That still leaves confounding by source, topic, language,
+or collection process untouched, and the cross-dataset comparison is not a
+pooled test: PolitiFact's small test count makes it far less precise. We
+therefore report its direction and its nonsignificant cascade-level $p$-value
+rather than fusing the two datasets into one headline number.
+
+All primary classifier scores come after checkpoint selection on the fixed
+validation split; we do not pick the outcome among test seeds. The diagnostic
+random forest is a different animal and reuses the official test partition in
+five-fold cross-validation, meant to compare feature summaries after the fact
+and to expose the cascade-size confound. A confirmatory study should lock the
+feature construction and hyperparameters on training and validation first, then
+evaluate exactly once on fresh data. Without that separation a diagnostic AUC
+can too easily be mistaken for a leaderboard result.
+
+The reproducibility bundle carries the analysis scripts, the JSON summaries,
+and the seed-level primary results. The six main classifier runs finished all
+five seeds; an optional DriftPool rerun stopped at four and is left out of the
+complete-seed table. Early-detection curves stay three-seed and the component
+ablation stays single-run, as noted. Stating these scopes stops a partial run
+from quietly looking comparable to the finished primary experiment. We do not
+promise bitwise determinism across hardware backends, so the scripts and saved
+outputs -- not an assertion of identical bits -- define what is reproducible.
+
+The terminology overlap deserves a clear line. Earlier work uses feature drift
+for change across datasets or time; we measure change within a cascade between
+neighboring posts. That is a difference in operationalization, not a claim that
+no one has studied semantic change in propagation before. A systematic
+literature pass and an independent reproduction would be needed before any
+priority claim.
+
+The practical upshot is accordingly narrow. A depth-aware drift summary could
+be offered to a human analyst as one extra signal, but the current results do
+not justify automating accusations, removing content, or flagging accounts as
+coordinated. Similarity can spring from ordinary quotation and shared sources,
+and the class-level effect is small. In a human-review workflow, a candidate
+use would have to show the summary improves calibrated decisions at a fixed
+false-positive rate and that the gain survives across topics and collection
+periods -- a decision analysis we have not run.
+
+One further caution concerns the labels themselves. Both benchmarks inherit
+fact-checking verdicts and treat them as if they were ground truth, yet those
+verdicts are judgments made by particular outlets at particular times, and they
+say nothing about whether a given post is harmful, illegal, or in need of any
+action. A drift summary that separates real from fake in aggregate therefore
+speaks only to measured representation change; it carries no recommendation
+about what a platform or moderator should do with any individual post. We keep
+the analysis at that descriptive level and avoid any policy claim.
+
+A stronger follow-up would keep discovery and confirmation apart. Feature
+definitions, depth weighting, and the sibling-similarity threshold could be
+fixed up front on a development corpus, with a second independently collected
+corpus held back for a single evaluation. Timestamped parent links would allow
+comparison at matched elapsed time as well as matched depth, since equal depth
+is not equal age. Annotating a subset by hand could separate verbatim copying,
+quotation, paraphrase, and unrelated siblings; if coordination is the question,
+that annotation must rest on independent behavioral evidence, not on similarity
+inferred from embeddings. Finally, model comparisons should freeze the sequence
+and graph architecture while varying only the drift representation, draw on
+multiple random splits or external datasets, and report calibration and
+class-conditional error alongside rank metrics. Those steps would turn today's
+benchmark observation into a testable story about how content transformation
+travels with propagation.
+
+\section{Conclusion}
+What looked like a large gap between fake and real cascades on GossipCop
+narrows to a small one once depth is taken seriously: the pooled 0.901
+fake-to-real ratio becomes 0.977 after depth weighting, and 0.975 at the
+cascade level ($p=0.048$, nominal). PolitiFact points the same way (0.969) but
+is not significant ($p=0.522$). The drift summaries do carry information past
+cascade size in our within-partition cross-validation (0.846 versus 0.792 AUC),
+and sibling repetition tracks lower drift ($r=-0.310$), but both findings are
+exploratory and observational. Across five seeds, the drift-aware hybrid does
+not beat the LSTM (accuracy $p=0.832$, AUC $p=0.212$). The honest reading is
+that parent--child change is real and measurable, not that it is a detector
+waiting to be deployed. Whether it generalizes is a question for independent,
+timestamped data and a preregistered plan.
+
+\begin{thebibliography}{00}
+\bibitem{dou2021upfd}
+Y. Dou, K. Shu, C. Xia, P. S. Yu, and L. Sun, ``User preference-aware fake
+news detection,'' in \emph{Proc. 44th Int. ACM SIGIR Conf. Research and
+Development in Information Retrieval}, 2021, pp. 2051--2055.
+
+\bibitem{bian2020bigcn}
+T. Bian, X. Xiao, T. Xu, P. Zhao, W. Huang, Y. Rong, and J. Huang, ``Rumor
+detection on social media with bi-directional graph convolutional networks,''
+in \emph{Proc. AAAI Conf. Artificial Intelligence}, vol. 34, no. 1, 2020,
+pp. 549--556.
+
+\bibitem{ma2016recurrent}
+J. Ma, W. Gao, P. Mitra, S. Kwon, B. J. Jansen, K.-F. Wong, and M.-Y. Cha,
+``Detecting rumors from microblogs with recurrent neural networks,'' in
+\emph{Proc. 25th Int. Joint Conf. Artificial Intelligence}, 2016,
+pp. 3818--3824.
+
+\bibitem{fu2023drift}
+C. Fu \emph{et al.}, ``Feature drift in fake news detection: An interpretable
+analysis,'' \emph{Applied Sciences}, vol. 13, no. 1, Art. no. 592, 2023,
+doi: 10.3390/app13010592.
+
+\bibitem{bai2023tree}
+L. Bai, X. Han, and C. Jia, ``A rumor detection model incorporating
+propagation path contextual semantics and user information,''
+\emph{Neural Processing Letters}, vol. 55, 2023, doi:
+10.1007/s11063-023-11229-w.
+
+\bibitem{kipf2017gcn}
+T. N. Kipf and M. Welling, ``Semi-supervised classification with graph
+convolutional networks,'' in \emph{Proc. Int. Conf. Learning Representations},
+2017.
+
+\bibitem{velickovic2018gat}
+P. Veli\v{c}kovi\'c, G. Cucurull, A. Casanova, A. Romero, P. Li\`o, and
+Y. Bengio, ``Graph attention networks,'' in \emph{Proc. Int. Conf. Learning
+Representations}, 2018.
+
+\bibitem{devlin2019bert}
+J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, ``BERT: Pre-training of
+deep bidirectional transformers for language understanding,'' in
+\emph{Proc. NAACL-HLT}, 2019, pp. 4171--4186.
+\end{thebibliography}
+
+\end{document}

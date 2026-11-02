@@ -16,6 +16,7 @@ from models.baseline_lstm import BaselineLSTM
 from models.degradation_gnn import DegradationGNN
 from models.hybrid import HybridDegradLSTM
 from models.drift_pool import DriftPoolHybrid, DriftPoolOnly
+from models.cross_modal_tree import CrossModalTreeNet
 from pipeline.checkpoints import save_checkpoint
 from pipeline.models import canonical_model_name
 
@@ -30,7 +31,10 @@ MODELS = {
     "Hybrid": HybridDegradLSTM,
     "DriftPool": DriftPoolHybrid,
     "DriftPoolOnly": DriftPoolOnly,
+    "CrossModalTree": CrossModalTreeNet,
 }
+
+DEFAULT_MODELS = tuple(name for name in MODELS if name != "CrossModalTree")
 
 # Constructor arguments recorded in each checkpoint. These must match the
 # arguments the model is actually built with, otherwise the checkpoint cannot
@@ -45,6 +49,14 @@ MODEL_CONFIGS = {
     "Hybrid": {"hidden_dim": 128, "num_layers": 2, "dropout": 0.3},
     "DriftPool": {"hidden_dim": 128, "num_layers": 2, "dropout": 0.3},
     "DriftPoolOnly": {"hidden_dim": 64, "dropout": 0.3},
+    "CrossModalTree": {
+        "hidden_dim": 128,
+        "num_layers": 3,
+        "dropout": 0.3,
+        "profile_dim": 10,
+        "hop_dim": 16,
+        "modality_dropout": 0.1,
+    },
 }
 
 
@@ -85,7 +97,10 @@ def train_and_eval(model_cls, train_ds, val_ds, test_ds, subset, seed, epochs,
             batch = batch.to(DEVICE)
             labels = batch.y.float().unsqueeze(1)
             opt.zero_grad()
-            logits = torch.cat([model(d) for d in batch.to_data_list()], dim=0)
+            if getattr(model, "supports_batch", False):
+                logits = model(batch)
+            else:
+                logits = torch.cat([model(d) for d in batch.to_data_list()], dim=0)
             crit(logits, labels).backward()
             opt.step()
 
@@ -95,7 +110,10 @@ def train_and_eval(model_cls, train_ds, val_ds, test_ds, subset, seed, epochs,
             for batch in vl:
                 batch = batch.to(DEVICE)
                 labels = batch.y.float().unsqueeze(1)
-                logits = torch.cat([model(d) for d in batch.to_data_list()], dim=0)
+                if getattr(model, "supports_batch", False):
+                    logits = model(batch)
+                else:
+                    logits = torch.cat([model(d) for d in batch.to_data_list()], dim=0)
                 vc += ((torch.sigmoid(logits) > 0.5).float() == labels).sum().item()
                 vs += labels.size(0)
                 vloss += crit(logits, labels).item() * labels.size(0)
@@ -117,7 +135,10 @@ def train_and_eval(model_cls, train_ds, val_ds, test_ds, subset, seed, epochs,
         for batch in tel:
             batch = batch.to(DEVICE)
             ys.extend(batch.y.cpu().numpy().tolist())
-            logits = torch.cat([model(d) for d in batch.to_data_list()], dim=0)
+            if getattr(model, "supports_batch", False):
+                logits = model(batch)
+            else:
+                logits = torch.cat([model(d) for d in batch.to_data_list()], dim=0)
             probs.extend(torch.sigmoid(logits).cpu().numpy().flatten().tolist())
     ys, probs = np.array(ys), np.array(probs)
     preds = (probs > 0.5).astype(float)
@@ -135,6 +156,17 @@ def main():
     ap.add_argument("--subset", default="politifact", choices=["politifact", "gossipcop"])
     ap.add_argument("--seeds", default="1,2,3")
     ap.add_argument("--models", default=None)
+    ap.add_argument(
+        "--epochs",
+        type=int,
+        default=None,
+        help="Override the default epoch budget (useful for smoke tests).",
+    )
+    ap.add_argument(
+        "--features",
+        default="bert",
+        help="Node feature view(s), joined with '+'. CrossModalTree needs bert+profile.",
+    )
     ap.add_argument("--out", required=True)
     ap.add_argument(
         "--checkpoint-dir",
@@ -144,11 +176,18 @@ def main():
     args = ap.parse_args()
 
     seeds = [int(s) for s in args.seeds.split(",")]
-    model_names = list(MODELS.keys()) if args.models is None else args.models.split(",")
+    model_names = list(DEFAULT_MODELS) if args.models is None else args.models.split(",")
+    lookup = {canonical_model_name(name): name for name in MODELS}
+    try:
+        model_names = [lookup[canonical_model_name(name)] for name in model_names]
+    except (KeyError, ValueError) as exc:
+        ap.error(f"Unknown model in --models: {exc}")
+    if "CrossModalTree" in model_names and "profile" not in args.features.split("+"):
+        ap.error("CrossModalTree requires --features bert+profile")
 
-    train_ds = UPFDGraphDataset(root="./data/upfd/raw", subset=args.subset, feature_type="bert", split="train")
-    val_ds = UPFDGraphDataset(root="./data/upfd/raw", subset=args.subset, feature_type="bert", split="val")
-    test_ds = UPFDGraphDataset(root="./data/upfd/raw", subset=args.subset, feature_type="bert", split="test")
+    train_ds = UPFDGraphDataset(root="./data/upfd/raw", subset=args.subset, feature_type=args.features, split="train")
+    val_ds = UPFDGraphDataset(root="./data/upfd/raw", subset=args.subset, feature_type=args.features, split="val")
+    test_ds = UPFDGraphDataset(root="./data/upfd/raw", subset=args.subset, feature_type=args.features, split="test")
 
     input_dim = train_ds[0].x.shape[1]
 
@@ -169,7 +208,7 @@ def main():
             t0 = time.time()
             m, model, best_epoch, best_vloss = train_and_eval(
                 MODELS[name], train_ds, val_ds, test_ds, args.subset, seed,
-                EPOCHS[args.subset], model_config=MODEL_CONFIGS[name],
+                args.epochs or EPOCHS[args.subset], model_config=MODEL_CONFIGS[name],
             )
             m["seed"] = seed
             metrics.append(m)
@@ -193,7 +232,8 @@ def main():
                     },
                     {
                         "subset": args.subset,
-                        "epochs": EPOCHS[args.subset],
+                        "feature_type": args.features,
+                        "epochs": args.epochs or EPOCHS[args.subset],
                         "batch_size": BS[args.subset],
                         "optimizer": "AdamW",
                         "lr": 1e-3,

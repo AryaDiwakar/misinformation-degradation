@@ -73,6 +73,8 @@ def main():
 
     rng = np.random.default_rng(args.seed)
     real_mag, fake_mag = [], []
+    real_nodes_total = 0
+    fake_nodes_total = 0
     real_hop, fake_hop = {}, {}
 
     for idx in range(len(dataset)):
@@ -80,10 +82,14 @@ def main():
         mag = drift_magnitude(graph)
         hops = graph.hop_depth.numpy()
         if int(graph.y.item()) == 1:
-            fake_mag.append(mag)
+            fake_nodes_total += int(mag.size)
+            # The paper's pooled edge-drift comparison excludes roots, which
+            # have no parent and therefore receive zero drift by definition.
+            fake_mag.append(mag[hops > 0])
             target = fake_hop
         else:
-            real_mag.append(mag)
+            real_nodes_total += int(mag.size)
+            real_mag.append(mag[hops > 0])
             target = real_hop
         for hop, value in zip(hops.tolist(), mag.tolist()):
             target.setdefault(int(hop), []).append(value)
@@ -128,6 +134,8 @@ def main():
         fake_mag_full_mean=np.array([fake_mag.mean()]),
         real_nodes=np.array([real_mag.size]),
         fake_nodes=np.array([fake_mag.size]),
+        real_nodes_total=np.array([real_nodes_total]),
+        fake_nodes_total=np.array([fake_nodes_total]),
         n_cascades=np.array([len(dataset)]),
         pooled_ratio=np.array([float(fake_mag.mean() / real_mag.mean())]),
         hop_standardized_ratio=np.array([standardized_ratio]),
@@ -139,8 +147,8 @@ def main():
     )
     ratio = float(fake_mag.mean() / real_mag.mean())
     print(
-        f"Saved {summary_path} | real {real_mag.size:,} nodes "
-        f"fake {fake_mag.size:,} nodes | pooled ratio = {ratio:.4f} | "
+        f"Saved {summary_path} | real {real_mag.size:,} non-root nodes "
+        f"fake {fake_mag.size:,} non-root nodes | pooled ratio = {ratio:.4f} | "
         f"hop-standardised ratio = {standardized_ratio:.4f}",
         flush=True,
     )

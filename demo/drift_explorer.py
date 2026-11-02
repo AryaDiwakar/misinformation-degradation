@@ -133,12 +133,19 @@ def draw_tree(ax, graph_arrays, drift, title):
 def page_finding(summary):
     st.header("The finding")
     n_cascades = int(summary.get("n_cascades", [0])[0])
-    n_nodes = int(summary["real_nodes"][0] + summary["fake_nodes"][0])
+    n_nodes = int(
+        summary.get(
+            "real_nodes_total",
+            summary["real_nodes"] + summary["fake_nodes"],
+        )[0]
+        + summary.get("fake_nodes_total", [0])[0]
+    )
     st.markdown(
         "Across **{:,} test cascades** ({:,} nodes), fake-news nodes show slightly "
         "less content drift from their parent than real-news nodes. The effect is "
-        "largest at propagation depth ≥ 2 and holds on a second dataset "
-        "(PolitiFact).".format(n_cascades, n_nodes)
+        "modest after accounting for propagation depth. The corresponding "
+        "cascade-level comparison on PolitiFact points in the same direction but "
+        "is not statistically significant (ratio 0.969, $p=0.522).".format(n_cascades, n_nodes)
     )
 
     real = summary["real_mag"]
@@ -158,8 +165,8 @@ def page_finding(summary):
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
     bins = np.linspace(0, 18, 60)
-    axes[0].hist(real, bins=bins, alpha=0.55, label=f"Real (n={summary['real_nodes'][0]:,})", color=REAL)
-    axes[0].hist(fake, bins=bins, alpha=0.55, label=f"Fake (n={summary['fake_nodes'][0]:,})", color=FAKE)
+    axes[0].hist(real, bins=bins, alpha=0.55, label=f"Real non-root (n={summary['real_nodes'][0]:,})", color=REAL)
+    axes[0].hist(fake, bins=bins, alpha=0.55, label=f"Fake non-root (n={summary['fake_nodes'][0]:,})", color=FAKE)
     axes[0].axvline(real_mean, color=REAL, ls="--", lw=1.5)
     axes[0].axvline(fake_mean, color=FAKE, ls="--", lw=1.5)
     axes[0].set_xlim(0, 12)
@@ -196,6 +203,169 @@ def page_finding(summary):
         "drift; 6 are structural (depth, children) and 2 are pure cascade size. "
         "Content drift on its own reaches ~0.85 AUC, and cascade size alone "
         "~0.79 AUC."
+    )
+
+    st.caption(
+        "The feature-group AUCs use exploratory cross-validation inside the "
+        "official GossipCop test partition; they are not independent held-out results."
+    )
+
+
+def page_dataset(summary, examples):
+    st.header("Dataset and experiment setup")
+    st.markdown(
+        "This project uses **UPFD** (User Preference-aware Fake News Detection), "
+        "a benchmark of fact-checking-labelled propagation cascades. Each row "
+        "in the experiment is one complete cascade; posts are nodes and "
+        "repost/reply links are edges. The demo uses cached test-split graph "
+        "examples, not live social-media data."
+    )
+
+    st.subheader("Official cascade split sizes")
+    import pandas as pd
+
+    splits = pd.DataFrame(
+        {
+            "Dataset": ["GossipCop", "PolitiFact"],
+            "Train cascades": [1092, 62],
+            "Validation cascades": [546, 31],
+            "Test cascades": [3826, 221],
+            "Use in this study": [
+                "Primary five-seed model comparison + analyses",
+                "Drift comparison; small split, no stable model ranking",
+            ],
+        }
+    )
+    st.dataframe(splits, hide_index=True, use_container_width=True)
+
+    left, right = st.columns(2)
+    left.metric("GossipCop test cascades", f"{int(summary.get('n_cascades', [3826])[0]):,}")
+    total_nodes = int(
+        summary.get("real_nodes_total", summary["real_nodes"])[0]
+        + summary.get("fake_nodes_total", summary["fake_nodes"])[0]
+    )
+    left.metric("GossipCop test nodes", f"{total_nodes:,}")
+    right.metric("Real / fake test cascades", f"{int(summary['hop_real_n'][0]):,} / {int(summary['hop_fake_n'][0]):,}")
+    right.metric("Frozen text-vector size", "768 dimensions per post")
+
+    st.subheader("What is inside one cascade?")
+    schema = pd.DataFrame(
+        [
+            ("Label", "One label per cascade: 0 = real, 1 = fake in this codebase."),
+            ("Node", "A post represented by a precomputed, frozen 768-dimensional BERT vector."),
+            ("Edge", "A parent-to-child repost/reply relation from the UPFD propagation tree."),
+            ("Depth", "Number of edges from the root; this is topological depth, not elapsed time."),
+            ("Content drift", "Cosine distance and L2 distance between a post vector and its parent's vector."),
+            ("Root", "Has no parent, so both parent-relative distances are set to zero by definition."),
+        ],
+        columns=["Field", "Meaning"],
+    )
+    st.dataframe(schema, hide_index=True, use_container_width=True)
+
+    st.subheader("What the stored UPFD example actually looks like")
+    st.write(
+        "Choose one cached test cascade. The table below is the numeric graph "
+        "record used by the model: one row per post/node. UPFD's supplied text "
+        "view here is already a BERT vector, so this preview does not contain "
+        "readable post text."
+    )
+    if examples and examples.get("examples"):
+        labels = {0: "Real", 1: "Fake"}
+        choices = examples["examples"]
+        choice_names = [
+            f"#{item['graph_index']} — {labels[item['label']]} — "
+            f"{item['n_nodes']} nodes, depth {item['max_depth']}"
+            for item in choices
+        ]
+        chosen = st.selectbox(
+            "Cached GossipCop test cascade",
+            range(len(choices)),
+            format_func=lambda i: choice_names[i],
+            key="dataset_raw_cascade",
+        )
+        item = choices[chosen]
+        arrays = item["arrays"]
+        x = np.asarray(arrays["x"])
+        parent = np.asarray(arrays["parent"], dtype=int)
+        depth = np.asarray(arrays["hop_depth"], dtype=int)
+        children = np.asarray(arrays["n_children"], dtype=int)
+        drift = drift_of(arrays)
+
+        st.caption(
+            f"Cascade #{item['graph_index']} · label {item['label']} ({labels[item['label']]}) · "
+            f"{x.shape[0]} nodes · {int(np.asarray(arrays['edge_index']).shape[1])} edges · "
+            f"x shape {tuple(x.shape)}"
+        )
+
+        raw_schema = pd.DataFrame(
+            [
+                ("x", str(tuple(x.shape)), "768-dimensional BERT vector for each post"),
+                ("edge_index", str(tuple(np.asarray(arrays['edge_index']).shape)), "Propagation links between node indices"),
+                ("parent", str(tuple(parent.shape)), "Parent node index; -1 marks the root"),
+                ("hop_depth", str(tuple(depth.shape)), "Tree depth of each node"),
+                ("n_children", str(tuple(children.shape)), "Number of direct child posts"),
+                ("y", str(tuple(np.asarray(arrays['y']).shape)), "Cascade label: 0 real, 1 fake"),
+            ],
+            columns=["Stored array", "Shape", "What it represents"],
+        )
+        st.dataframe(raw_schema, hide_index=True, use_container_width=True)
+
+        node_table = pd.DataFrame(
+            {
+                "node_id": np.arange(x.shape[0]),
+                "parent_id": parent,
+                "depth": depth,
+                "children": children,
+                "cosine_drift": np.round(drift[:, 0], 4),
+                "L2_drift": np.round(drift[:, 1], 4),
+                "depth_norm": np.round(drift[:, 2], 4),
+                "children_norm": np.round(drift[:, 3], 4),
+                "is_root": drift[:, 4].astype(int),
+                "x[0]": np.round(x[:, 0], 4),
+                "x[1]": np.round(x[:, 1], 4),
+                "x[2]": np.round(x[:, 2], 4),
+                "x[3]": np.round(x[:, 3], 4),
+            }
+        )
+        st.caption("First 20 node rows; x[0]–x[3] are just the first four of 768 embedding coordinates.")
+        st.dataframe(node_table.head(20), hide_index=True, use_container_width=True)
+
+        node_id = st.selectbox(
+            "Inspect one node's embedding coordinates",
+            range(x.shape[0]),
+            index=min(1, x.shape[0] - 1),
+            key="dataset_raw_node",
+        )
+        vector_preview = pd.DataFrame(
+            {
+                "dimension": np.arange(12),
+                "value": np.round(x[node_id, :12], 6),
+            }
+        )
+        st.caption(f"Node {node_id}: showing 12 of its 768 numeric embedding values.")
+        st.dataframe(vector_preview, hide_index=True, use_container_width=True)
+
+        edge_rows = [
+            {"parent_node": int(parent[node]), "child_node": node}
+            for node in range(len(parent))
+            if parent[node] >= 0
+        ]
+        st.caption("Parent → child links (first 20); this is the propagation-tree structure.")
+        st.dataframe(pd.DataFrame(edge_rows).head(20), hide_index=True, use_container_width=True)
+    else:
+        st.warning("No cached example cascades found. Rebuild them with scripts/build_demo_cache.py.")
+
+    st.subheader("How the experiment is run")
+    st.markdown(
+        "1. Keep UPFD's supplied train/validation/test cascade split.\n"
+        "2. Use the supplied frozen BERT vectors and tree structure; we do not re-encode raw post text.\n"
+        "3. Compute parent-relative drift and structural features for each node.\n"
+        "4. Compare drift across labels with depth controls; train primary GossipCop models and select checkpoints on validation accuracy.\n"
+        "5. Report test results on the fixed split. The feature-group cross-validation shown in the paper is an explicitly exploratory analysis performed within the test partition."
+    )
+    st.warning(
+        "This is an offline research prototype. It does not ingest a live platform "
+        "stream, verify claims, or determine whether any individual post is true."
     )
 
 
@@ -316,9 +486,11 @@ def main():
         )
         st.stop()
 
-    tab_finding, tab_cascades, tab_predict = st.tabs(
-        ["The Finding", "Cascade Explorer", "Live Predictor"]
+    tab_dataset, tab_finding, tab_cascades, tab_predict = st.tabs(
+        ["Dataset & Raw Data", "The Finding", "Cascade Explorer", "Optional Predictor"]
     )
+    with tab_dataset:
+        page_dataset(summary, examples)
     with tab_finding:
         page_finding(summary)
     with tab_cascades:

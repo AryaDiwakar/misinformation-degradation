@@ -14,6 +14,7 @@ the phenomenon is an unexplained statistical regularity and the paper should
 say so.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -109,9 +110,14 @@ def cascade_homogeneity(graph):
 
 
 def main():
-    subset = sys.argv[1] if len(sys.argv) > 1 else "gossipcop"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("subset", nargs="?", default="gossipcop")
+    parser.add_argument("--root", default="./data/upfd/raw")
+    parser.add_argument("--out", default=None)
+    args = parser.parse_args()
+    subset = args.subset
     ds = UPFDGraphDataset(
-        root="./data/upfd/raw", subset=subset, feature_type="bert", split="test"
+        root=args.root, subset=subset, feature_type="bert", split="test"
     )
 
     per_class = {0: [], 1: []}
@@ -180,12 +186,11 @@ def main():
     )
     out.setdefault("tests", {})["mean_pairwise_cosine"] = {"p_value": float(p)}
 
-    path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "..",
-        "results",
+    path = args.out or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "results",
         f"mechanism_probe_{subset}.json",
     )
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w") as handle:
         json.dump(out, handle, indent=2)
     print(f"\nSaved {os.path.abspath(path)}")

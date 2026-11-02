@@ -9,6 +9,7 @@ from models.degradation_gnn import DegradationGNN
 from models.degradation_trajectory import DegradationTrajectoryNetwork
 from models.drift_pool import DriftPoolHybrid, DriftPoolOnly
 from models.hybrid import HybridDegradLSTM
+from models.cross_modal_tree import CrossModalTreeNet
 
 
 MODEL_ALIASES = {
@@ -25,6 +26,9 @@ MODEL_ALIASES = {
     "driftpool": "drift_pool",
     "drift_pool_only": "drift_pool_only",
     "driftpoolonly": "drift_pool_only",
+    "cross_modal_tree": "cross_modal_tree",
+    "crossmodaltree": "cross_modal_tree",
+    "cross_modal_tree_net": "cross_modal_tree",
     "gcn": "gcn",
     "gat": "gat",
     "bigcn": "bigcn",
@@ -39,6 +43,7 @@ MODEL_CLASSES = {
     "hybrid": HybridDegradLSTM,
     "drift_pool": DriftPoolHybrid,
     "drift_pool_only": DriftPoolOnly,
+    "cross_modal_tree": CrossModalTreeNet,
     "gcn": GCNModel,
     "gat": GATModel,
     "bigcn": BiGCNModel,
@@ -92,6 +97,10 @@ def build_model(name: str, input_dim: int, config: Dict[str, Any] | None = None)
         kwargs.pop("num_layers")
     elif model_name == "dtn":
         kwargs.pop("num_layers")
+    elif model_name == "cross_modal_tree":
+        kwargs["profile_dim"] = int(config.get("profile_dim", 10))
+        kwargs["hop_dim"] = int(config.get("hop_dim", 16))
+        kwargs["modality_dropout"] = float(config.get("modality_dropout", 0.1))
     elif model_name in {"gcn", "gat", "bigcn"}:
         kwargs.pop("bidirectional", None)
 

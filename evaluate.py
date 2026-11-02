@@ -124,10 +124,16 @@ def main():
     )
     model_name = checkpoint.get("model_name", args.model)
 
+    experiment_config = checkpoint.get("experiment_config", {})
+    checkpoint_feature_type = experiment_config.get("feature_type")
+    if not checkpoint_feature_type:
+        checkpoint_feature_type = experiment_config.get("data", {}).get("feature_type")
+    feature_type = checkpoint_feature_type or config["data"]["feature_type"]
+
     train_loader, _, test_loader = get_upfd_loaders(
         root=config["data"]["root"],
         subset=config["data"]["subset"],
-        feature_type=config["data"]["feature_type"],
+        feature_type=feature_type,
         batch_size=config["data"]["batch_size"],
     )
 
@@ -137,14 +143,17 @@ def main():
         batch = batch.to(device)
         labels = batch.y.float()
         with torch.no_grad():
-            logits_list = []
-            for data in batch.to_data_list():
-                if uses_drift_auxiliary_loss(model_name):
-                    logits, _ = model(data, return_drift=True)
-                else:
-                    logits = model(data)
-                logits_list.append(logits)
-            logits = torch.cat(logits_list, dim=0)
+            if getattr(model, "supports_batch", False):
+                logits = model(batch)
+            else:
+                logits_list = []
+                for data in batch.to_data_list():
+                    if uses_drift_auxiliary_loss(model_name):
+                        logits, _ = model(data, return_drift=True)
+                    else:
+                        logits = model(data)
+                    logits_list.append(logits)
+                logits = torch.cat(logits_list, dim=0)
         probs = torch.sigmoid(logits).flatten()
         preds = (probs > 0.5).float()
 

@@ -59,6 +59,11 @@ def cascade_from_arrays(arrays: Mapping[str, Any]) -> Data:
         root_idx=torch.tensor([0]),
         n_nodes=torch.tensor([x.size(0)]),
     )
+    if "profile_x" in arrays:
+        profile_x = torch.as_tensor(np.asarray(arrays["profile_x"]), dtype=torch.float32)
+        if profile_x.ndim != 2 or profile_x.size(0) != x.size(0):
+            raise ValueError("profile_x must be a [num_nodes, profile_dim] matrix")
+        data.profile_x = profile_x
     if "y" in arrays:
         data.y = torch.as_tensor(np.asarray(arrays["y"]), dtype=torch.long).reshape(-1)
     return data

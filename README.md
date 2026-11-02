@@ -12,6 +12,7 @@ The work combines:
 - A content-drift-only random-forest discriminator using cascade-level statistics, without a text encoder or learned graph embeddings.
 - DegradGNN, a drift-aware propagation model.
 - HybridDegradLSTM, which fuses a bidirectional LSTM over cascade order with a propagation GNN.
+- CrossModalTreeNet, an experimental text/profile model with gated fusion and edge-conditioned, bidirectional tree propagation.
 - Partial-cascade evaluation for early misinformation detection.
 
 ## Headline Results
@@ -24,7 +25,7 @@ Results below are reported from the current saved experiments. GossipCop is the 
 | Drift difference, PolitiFact | Pooled ratio 0.883; hop-standardised ratio 0.911; cascade-level ratio 0.969, **p = 0.52** (not significant) |
 | Content-drift-only discriminator | **0.846 AUC** on GossipCop using 4 content-drift statistics (no text encoder, no graph learning) |
 | Incremental value over cascade shape | Content drift beats cascade size alone by **+0.054 AUC** (paired bootstrap, p < 0.0001); beats structure at matched size by +0.015 (p = 0.004) |
-| Verified mechanism | Fake cascades have far more near-duplicate *sibling* reposts (98.3% vs 92.7% @ cosine 0.95, p = 1e-287); near-duplication predicts drift (r = −0.31, p = 2e-85) within class and size-controlled |
+| Evidence consistent with copying | Fake cascades have more near-duplicate *sibling* reposts (98.3% vs 92.7% @ cosine 0.95, p = 1e-287); duplication is associated with drift (r = −0.31, p = 2e-85) within class and size-controlled; observational, not causal |
 | Full 12-statistic discriminator | 0.801 accuracy / 0.879 AUC on GossipCop; cascade *size* alone reaches 0.792 AUC |
 | Drift-only at 10% cascade size | 0.733 accuracy / 0.797 AUC on GossipCop; **0.707 AUC** once the 25.7% of root-only cascades are excluded |
 | HybridDegradLSTM | 0.9585 accuracy / 0.9876 AUC on GossipCop, 3-seed mean |
@@ -108,6 +109,11 @@ python3 scripts/run_early_detection.py --seeds 1,2,3
 # Multi-seed benchmark evaluation for the primary dataset
 python3 multiseed.py --subset gossipcop --seeds 1,2,3 --out results/gossipcop_reproduction.json
 
+# Evaluate the experimental cross-modal tree model against the text-only LSTM
+python3 multiseed.py --subset gossipcop --features bert+profile \
+  --models CrossModalTree,BaselineLSTM --seeds 1,2,3,4,5 \
+  --out results/crossmodal_gossipcop.json
+
 # Validate the tracked paper artifacts
 python3 scripts/validate_results.py
 
@@ -130,6 +136,8 @@ python3 scripts/run_reproduction.py --seeds 1,2,3
 ```
 
 Most training runs are compute-intensive. Apple Silicon uses MPS when available; otherwise the scripts fall back to CPU.
+
+`CrossModalTreeNet` keeps the 768-d BERT text view and the 10-d UPFD user-profile view separate, then fuses them with a learned gate. Tree messages are conditioned on parent→child text/profile changes and passed in both directions; graph readout combines attention, mean, and max pooling. Load both aligned views with `feature_type: bert+profile` (or `--features bert+profile`). This is an experimental architecture, **not a state-of-the-art claim**: compare it against same-split baselines over multiple seeds before making performance claims. The user-profile data is dataset-specific and should be validated on an external benchmark before claiming generalization.
 
 Both training paths write a metadata-rich checkpoint containing the model architecture, input dimension, dataset, seed, validation score, and full experiment configuration; `multiseed.py --checkpoint-dir` and `train.py` share the same on-disk format. The two paths use **different protocols** and therefore **different filenames**: `multiseed.py` writes `<model>_<subset>_seed<N>.pt` (plain BCE, best-validation-accuracy — the paper's canonical protocol) while `train.py` writes `<model>_<subset>_seed<N>_trainaug.pt` (drift auxiliary loss, best-validation-loss). This prevents the config-driven trainer from silently replacing the canonical paper checkpoint.
 

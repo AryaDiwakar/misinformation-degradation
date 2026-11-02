@@ -16,6 +16,7 @@ def make_graph():
         hop_depth=torch.tensor([0, 1, 1]),
         parent=torch.tensor([-1, 0, 0]),
         n_children=torch.tensor([2, 0, 0]),
+        profile_x=torch.arange(6, dtype=torch.float32).reshape(3, 2),
     )
 
 
@@ -27,6 +28,7 @@ def test_truncation_rebuilds_parent_and_children():
     assert torch.equal(truncated.parent, torch.tensor([-1, 0]))
     assert torch.equal(truncated.n_children, torch.tensor([1, 0]))
     assert int(truncated.edge_index.max()) < 2
+    assert torch.equal(truncated.profile_x, make_graph().profile_x[:2])
 
 
 def test_truncation_rejects_invalid_fraction():

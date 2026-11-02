@@ -106,6 +106,12 @@ class UPFDGraphDataset(Dataset):
         self.split = split
         data_dir = os.path.join(root, subset)
 
+        feature_types = [name.strip() for name in feature_type.split("+")]
+        if not feature_types or any(not name for name in feature_types):
+            raise ValueError(f"Invalid feature_type {feature_type!r}")
+        if len(set(feature_types)) != len(feature_types):
+            raise ValueError(f"Duplicate feature types in {feature_type!r}")
+
         edge_index = read_txt_array(os.path.join(data_dir, "A.txt"), sep=",").t()
         node_graph_id = torch.from_numpy(
             np.load(os.path.join(data_dir, "node_graph_id.npy"))
@@ -115,29 +121,70 @@ class UPFDGraphDataset(Dataset):
         ).long()
         _, graph_labels = graph_labels.unique(sorted=True, return_inverse=True)
 
-        feature_path = os.path.join(data_dir, f"new_{feature_type}_feature.npz")
-        x = torch.from_numpy(sp.load_npz(feature_path).todense()).float()
+        feature_matrices = {}
+        for name in feature_types:
+            feature_path = os.path.join(data_dir, f"new_{name}_feature.npz")
+            feature_matrices[name] = torch.from_numpy(
+                sp.load_npz(feature_path).toarray()
+            ).float()
+        x = feature_matrices[feature_types[0]]
+        for name, features in feature_matrices.items():
+            if features.size(0) != x.size(0):
+                raise ValueError(
+                    f"Feature rows for {name!r} do not align with {feature_types[0]!r}"
+                )
 
         num_nodes = x.size(0)
         edge_index, _ = add_self_loops(edge_index)
         edge_index, _ = coalesce(edge_index, None, num_nodes, num_nodes)
 
         num_graphs = graph_labels.size(0)
+        node_graph_np = node_graph_id.numpy()
+        if node_graph_np.size != num_nodes:
+            raise ValueError(
+                f"Node graph IDs ({node_graph_np.size}) do not align with features ({num_nodes})"
+            )
+        if node_graph_np.size and (
+            node_graph_np.min() < 0 or node_graph_np.max() >= num_graphs
+        ):
+            raise ValueError("Node graph IDs reference a missing graph")
+
+        # Group nodes and edges once. The former implementation built a full
+        # node mask and scanned the full edge list separately for every graph,
+        # making dataset construction O(num_graphs * (nodes + edges)).
+        node_order = np.argsort(node_graph_np, kind="stable")
+        node_counts = np.bincount(node_graph_np, minlength=num_graphs)
+        node_offsets = np.concatenate([[0], node_counts.cumsum()])
+
+        edge_np = edge_index.numpy()
+        source_graph = node_graph_np[edge_np[0]]
+        same_graph = source_graph == node_graph_np[edge_np[1]]
+        edge_index = edge_index[:, torch.from_numpy(same_graph)]
+        source_graph = source_graph[same_graph]
+        edge_order = np.argsort(source_graph, kind="stable")
+        edge_counts = np.bincount(source_graph, minlength=num_graphs)
+        edge_offsets = np.concatenate([[0], edge_counts.cumsum()])
+
+        global_to_local = torch.empty(num_nodes, dtype=torch.long)
         graphs = []
         for g in range(num_graphs):
-            nodes = (node_graph_id == g).nonzero(as_tuple=True)[0]
+            node_start, node_end = node_offsets[g : g + 2]
+            nodes = torch.from_numpy(node_order[node_start:node_end].copy())
             if nodes.numel() == 0:
                 continue
-            node_offset = nodes[0].item()
-            node_mask = torch.zeros(num_nodes, dtype=torch.bool)
-            node_mask[nodes] = True
-            mask = node_mask[edge_index[0]] & node_mask[edge_index[1]]
-            g_edge_index = edge_index[:, mask].clone()
-            g_edge_index -= node_offset
+            global_to_local[nodes] = torch.arange(nodes.numel())
+            edge_start, edge_end = edge_offsets[g : g + 2]
+            selected_edges = torch.from_numpy(edge_order[edge_start:edge_end].copy())
+            g_edge_index = global_to_local[edge_index[:, selected_edges]]
             g_x = x[nodes]
             hop_depth = compute_hop_depths(g_edge_index, nodes.size(0))
             parent = build_parent_index(g_edge_index, nodes.size(0), hop_depth)
             n_children = count_children(g_edge_index, nodes.size(0))
+            extra_features = {
+                f"{name}_x": features[nodes]
+                for name, features in feature_matrices.items()
+                if name != feature_types[0]
+            }
             data = Data(
                 x=g_x,
                 edge_index=g_edge_index,
@@ -147,6 +194,7 @@ class UPFDGraphDataset(Dataset):
                 n_children=n_children,
                 root_idx=torch.tensor([0]),
                 n_nodes=torch.tensor([nodes.size(0)]),
+                **extra_features,
             )
             graphs.append(data)
 

@@ -28,6 +28,12 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="configs/default.yaml")
     parser.add_argument("--model", type=str, default=None)
+    parser.add_argument(
+        "--features",
+        type=str,
+        default=None,
+        help="Override node feature view(s), e.g. bert+profile for CrossModalTree",
+    )
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--lr", type=float, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
@@ -85,20 +91,23 @@ def train_epoch(model, loader, optimizer, criterion, device, drift_weight=0.5, u
         logits_list = []
         drift_loss = torch.tensor(0.0, device=device)
 
-        for data in batch.to_data_list():
-            if use_drift:
-                logits, drift_pred = model(data, return_drift=True)
-                logits_list.append(logits)
-                parent = getattr(data, "parent", None)
-                n_children = getattr(data, "n_children", None)
-                if parent is None:
-                    parent = torch.full((data.x.size(0),), -1, dtype=torch.long, device=data.x.device)
-                if n_children is None:
-                    n_children = torch.zeros(data.x.size(0), dtype=torch.long, device=data.x.device)
-                target_drift = compute_drift(data.x, parent, data.hop_depth, n_children)
-                drift_loss = drift_loss + drift_criterion(drift_pred, target_drift.detach())
-            else:
-                logits_list.append(model(data))
+        if getattr(model, "supports_batch", False) and not use_drift:
+            logits_list.append(model(batch))
+        else:
+            for data in batch.to_data_list():
+                if use_drift:
+                    logits, drift_pred = model(data, return_drift=True)
+                    logits_list.append(logits)
+                    parent = getattr(data, "parent", None)
+                    n_children = getattr(data, "n_children", None)
+                    if parent is None:
+                        parent = torch.full((data.x.size(0),), -1, dtype=torch.long, device=data.x.device)
+                    if n_children is None:
+                        n_children = torch.zeros(data.x.size(0), dtype=torch.long, device=data.x.device)
+                    target_drift = compute_drift(data.x, parent, data.hop_depth, n_children)
+                    drift_loss = drift_loss + drift_criterion(drift_pred, target_drift.detach())
+                else:
+                    logits_list.append(model(data))
 
         logits = torch.cat(logits_list, dim=0)
         loss = criterion(logits, labels)
@@ -131,12 +140,15 @@ def evaluate(model, loader, criterion, device, use_drift=False):
         batch = batch.to(device)
         labels = batch.y.float().unsqueeze(1)
         logits_list = []
-        for data in batch.to_data_list():
-            if use_drift:
-                logits, _ = model(data, return_drift=True)
-            else:
-                logits = model(data)
-            logits_list.append(logits)
+        if getattr(model, "supports_batch", False) and not use_drift:
+            logits_list.append(model(batch))
+        else:
+            for data in batch.to_data_list():
+                if use_drift:
+                    logits, _ = model(data, return_drift=True)
+                else:
+                    logits = model(data)
+                logits_list.append(logits)
         logits = torch.cat(logits_list, dim=0)
         loss = criterion(logits, labels)
         preds = (torch.sigmoid(logits) > 0.5).float()
@@ -158,6 +170,9 @@ def main():
     args = parse_args()
 
     config = load_config(args.config)
+
+    if args.features:
+        config["data"]["feature_type"] = args.features
 
     model_name = canonical_model_name(args.model or config["model"]["name"])
     training_config = config.get("training", {})
@@ -299,9 +314,12 @@ def main():
     with torch.no_grad():
         for batch in test_loader:
             batch = batch.to(device)
-            for data in batch.to_data_list():
-                output = model(data)
-                probs.append(torch.sigmoid(output).item())
+            if getattr(model, "supports_batch", False):
+                probs.extend(torch.sigmoid(model(batch)).flatten().cpu().numpy())
+            else:
+                for data in batch.to_data_list():
+                    output = model(data)
+                    probs.append(torch.sigmoid(output).item())
 
     checkpoint_dir = config["logging"].get("checkpoint_dir", "checkpoints")
     result_dir = config["logging"].get("result_dir", "results")

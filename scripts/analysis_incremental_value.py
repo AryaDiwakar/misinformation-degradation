@@ -14,6 +14,7 @@ Method:
     effects at once.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -153,8 +154,13 @@ def joint_size_hop_control(table, size_bucket=10, hop=2):
 
 
 def main():
-    subset = sys.argv[1] if len(sys.argv) > 1 else "gossipcop"
-    root = "./data/upfd/raw"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("subset", nargs="?", default="gossipcop")
+    parser.add_argument("--root", default="./data/upfd/raw")
+    parser.add_argument("--out", default=None)
+    args = parser.parse_args()
+    subset = args.subset
+    root = args.root
 
     ds = UPFDGraphDataset(
         root=root, subset=subset, feature_type="bert", split="test"
@@ -214,12 +220,11 @@ def main():
             f"(n={rec['n_real']}/{rec['n_fake']})"
         )
 
-    out = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "..",
-        "results",
+    out = args.out or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "results",
         f"incremental_value_{subset}.json",
     )
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w") as handle:
         json.dump(results, handle, indent=2)
     print(f"\nSaved {os.path.abspath(out)}")

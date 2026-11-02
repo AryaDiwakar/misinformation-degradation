@@ -31,7 +31,16 @@ def validate_upfd_dataset(
     if not data_dir.is_dir():
         raise DataValidationError(f"Missing dataset directory: {data_dir}")
 
-    required = [*REQUIRED_FILES, f"new_{feature_type}_feature.npz"]
+    feature_types = [name.strip() for name in feature_type.split("+")]
+    if not feature_types or any(not name for name in feature_types):
+        raise DataValidationError(f"Invalid feature_type {feature_type!r}")
+    if len(set(feature_types)) != len(feature_types):
+        raise DataValidationError(f"Duplicate feature types in {feature_type!r}")
+
+    required = [
+        *REQUIRED_FILES,
+        *(f"new_{name}_feature.npz" for name in feature_types),
+    ]
     missing = [name for name in required if not (data_dir / name).is_file()]
     if missing:
         raise DataValidationError(
@@ -46,7 +55,11 @@ def validate_upfd_dataset(
 
     node_graph_id = np.load(data_dir / "node_graph_id.npy")
     graph_labels = np.load(data_dir / "graph_labels.npy")
-    features = sp.load_npz(data_dir / f"new_{feature_type}_feature.npz")
+    feature_matrices = {
+        name: sp.load_npz(data_dir / f"new_{name}_feature.npz")
+        for name in feature_types
+    }
+    features = feature_matrices[feature_types[0]]
 
     if node_graph_id.ndim != 1:
         raise DataValidationError(f"{subset}: node_graph_id.npy must be one-dimensional")
@@ -57,6 +70,12 @@ def validate_upfd_dataset(
             f"{subset}: feature rows ({features.shape[0]}) do not match "
             f"node IDs ({node_graph_id.size})"
         )
+    for name, matrix in feature_matrices.items():
+        if matrix.shape[0] != node_graph_id.size:
+            raise DataValidationError(
+                f"{subset}: {name} feature rows ({matrix.shape[0]}) do not match "
+                f"node IDs ({node_graph_id.size})"
+            )
     if edges.size and edges.max() >= features.shape[0]:
         raise DataValidationError(f"{subset}: A.txt references a missing node")
     if node_graph_id.size and (
@@ -94,6 +113,7 @@ def validate_upfd_dataset(
         "num_nodes": int(features.shape[0]),
         "num_edges": int(edges.shape[0]),
         "feature_dim": int(features.shape[1]),
+        "feature_dims": {name: int(matrix.shape[1]) for name, matrix in feature_matrices.items()},
         "splits": split_sizes,
         "class_counts": {
             str(label): int(count)

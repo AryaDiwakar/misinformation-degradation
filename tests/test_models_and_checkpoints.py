@@ -1,7 +1,7 @@
 import json
 
 import torch
-from torch_geometric.data import Data
+from torch_geometric.data import Batch, Data
 
 from pipeline.checkpoints import load_checkpoint, save_checkpoint
 from pipeline.models import build_model, canonical_model_name
@@ -17,6 +17,7 @@ def make_graph():
         hop_depth=torch.tensor([0, 1, 2, 3]),
         parent=torch.tensor([-1, 0, 1, 2]),
         n_children=torch.tensor([1, 1, 1, 0]),
+        profile_x=torch.rand(4, 10),
     )
 
 
@@ -29,6 +30,7 @@ def test_registered_models_return_one_logit():
         "hybrid",
         "drift_pool",
         "drift_pool_only",
+        "cross_modal_tree",
         "gcn",
         "gat",
         "bigcn",
@@ -144,3 +146,42 @@ def test_model_aliases_are_stable():
     assert canonical_model_name("HybridDegradLSTM") == "hybrid"
     assert canonical_model_name("drift-pool-only") == "drift_pool_only"
     assert canonical_model_name("LSTM") == "baseline_lstm"
+    assert canonical_model_name("CrossModalTree") == "cross_modal_tree"
+
+
+def test_cross_modal_tree_requires_aligned_profile_features():
+    graph = make_graph()
+    model = build_model(
+        "cross_modal_tree",
+        8,
+        {"hidden_dim": 16, "num_layers": 2, "dropout": 0.0},
+    ).eval()
+    with torch.no_grad():
+        logits = model(graph)
+    assert logits.shape == (1, 1)
+    assert torch.isfinite(logits).all()
+
+    graph.profile_x = torch.rand(4, 9)
+    try:
+        model(graph)
+    except ValueError as exc:
+        assert "Expected 10 profile features" in str(exc)
+    else:  # pragma: no cover
+            raise AssertionError("expected a profile dimension mismatch")
+
+
+def test_cross_modal_tree_batched_output_matches_per_graph_output():
+    first = make_graph()
+    second = make_graph()
+    second.x = second.x + 0.25
+    second.profile_x = second.profile_x + 0.1
+    model = build_model(
+        "cross_modal_tree",
+        8,
+        {"hidden_dim": 16, "num_layers": 2, "dropout": 0.0, "modality_dropout": 0.0},
+    ).eval()
+    with torch.no_grad():
+        expected = torch.cat([model(first), model(second)], dim=0)
+        actual = model(Batch.from_data_list([first, second]))
+    assert actual.shape == (2, 1)
+    assert torch.allclose(actual, expected, atol=1e-6)

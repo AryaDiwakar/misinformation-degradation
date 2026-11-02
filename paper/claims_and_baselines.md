@@ -18,11 +18,11 @@
 > propagation depth (GossipCop hop-standardised ratio 0.977, cascade-level p = 0.048;
 > PolitiFact 0.911, cascade-level p = 0.52 — not significant there). The signal is
 > **not** a proxy for cascade shape — content drift beats cascade size alone by
-> **+0.054 AUC** (paired bootstrap, p < 0.0001) — and it has a **verified mechanism**:
+> **+0.054 AUC** (paired bootstrap, p < 0.0001) — and it has **mechanistic evidence consistent with content reuse**:
 > fake-news cascades contain far more near-duplicate *sibling* reposts (98.3% vs 92.7% at
-> cosine 0.95, p = 1e-287), and near-duplication is strongly negatively correlated with
+> cosine 0.95, p = 1e-287), and near-duplication is negatively associated with
 > drift (r = −0.31, p = 2e-85) within each class and after controlling for cascade size.
-> Coordinated copying creates homogeneous subtrees, and homogeneous subtrees drift less.
+> These observational embedding results support, but do not prove, a copying-based account.
 > A drift-aware model built on this signal reaches the **best accuracy in our six-model
 > comparison (0.9585)**, and we derive a concrete design rule: consume drift via
 > set-pooling, not per-node concatenation.
@@ -38,7 +38,7 @@ This is a *phenomenon + lightweight-signal + explainable-model* paper. It is **n
 |---|-------|----------|----------|---------|
 | **A** | Fake news drifts less than real news per propagation hop | **depth-controlled**: GC hop-std 0.977 / cascade-level 0.975 (p=0.048); PF hop-std 0.911 / cascade-level 0.969 (p=0.52) | Real, cross-dataset, but **modest** (~2% on GC) | **Lead the paper with this, at its true size** |
 | **B** | Content drift adds information **beyond cascade shape** | content-only 0.846 vs size-only 0.792 AUC → **+0.054 AUC, p<0.0001** (paired bootstrap); vs size+structural +0.015, p=0.004 | Strong, and survives the size control | **Lead with this — it is the defensible form of the claim** |
-| **B2** | The effect has a **verified mechanism** (coordinated copying) | sibling near-duplicate rate: fake 98.3% vs real 92.7% @cos≥0.95 (p=1e-287); within-cascade dispersion does **not** differ (p=0.32); corr(dup, drift) = −0.31 (p=2e-85), within class and size-controlled | Novel and mechanistic, not just correlational | **The strongest new claim — feature it prominently** |
+| **B2** | Evidence is **consistent with a copying-based explanation** | sibling near-duplicate rate: fake 98.3% vs real 92.7% @cos≥0.95 (p=1e-287); within-cascade dispersion does **not** differ (p=0.32); corr(dup, drift) = −0.31 (p=2e-85), within class and size-controlled | Mechanism-consistent observational evidence; **not causal proof** | **Feature as supporting evidence, not a verified mechanism** |
 | **C** | A drift-aware model (HybridDegradLSTM) achieves the best accuracy in our comparison | 0.9585±0.0030 acc / 0.9876 AUC (GossipCop, 3 seeds); 0.9593 (5 seeds) | Weak: **no longer than needed** | **Reframe; never call SOTA** |
 
 ### 2b. The reframe that makes this a journal paper
@@ -52,10 +52,11 @@ more defensible contribution:
    information a detector would not already have from cascade shape?" — content drift
    beats size alone by +0.054 AUC (paired bootstrap over identical folds, p < 0.0001),
    beats structure at matched size (+0.015, p = 0.004), and adds more than structure does.
-2. **Mechanism (§5.5).** The copying hypothesis is now measured, not asserted: fake
+2. **Mechanism-consistent evidence (§5.5).** The copying hypothesis is now tested, not
+   simply asserted: fake
    cascades have far more near-duplicate *sibling* reposts while overall within-cascade
    dispersion does not differ, and near-duplication predicts drift within each class and
-   after controlling for cascade size.
+   after controlling for cascade size. This is observational evidence, not causal proof.
 
 Together these make the paper a **measurement + mechanism + design-rule** contribution
 rather than a detector contribution — which is exactly what a journal wants and what a
@@ -118,6 +119,9 @@ The discriminator correction: the "12 aggregate statistics" are 4 content + 6 st
 - ❌ "PolitiFact results are stable / the model generalizes there." — PolitiFact has 62
   training graphs; both LSTM and Hybrid collapse in some seeds to 0.489. We report
   PolitiFact **only** for the drift phenomenon (A), never for the model.
+- ❌ "Coordinated copying causes lower drift." — sibling duplication is associated with lower
+  drift, but the embedding analysis is observational and does not establish coordination,
+  mediation, or causality.
 
 ---
 
